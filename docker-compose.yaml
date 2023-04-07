@@ -1,0 +1,19 @@
+version: "3.7"
+services:
+  db:
+    image: postgres
+    container_name: database
+    command:
+      -p 5432
+    expose:
+      - 5432
+    ports:
+      - "5432:5432"
+    env_file:
+      - .env
+    networks:
+      - my-network
+
+networks:
+  my-network:
+    driver: bridge
