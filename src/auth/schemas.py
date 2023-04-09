@@ -15,4 +15,5 @@ class HashedUserSchema(BaseModel):
 
 
 class PublicKeySchema(BaseModel):
-    public_key: str
+    public_key: bytes
+    signature: bytes
