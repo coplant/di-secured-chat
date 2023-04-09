@@ -5,6 +5,8 @@ import os
 load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+PUBLIC_KEY = BASE_DIR / "keys" / "public.pem"
+PRIVATE_KEY = BASE_DIR / "keys" / "private.pem"
 
 DB_HOST = os.environ.get("DB_HOST")
 DB_PORT = os.environ.get("DB_PORT")
