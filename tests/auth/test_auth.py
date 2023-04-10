@@ -117,6 +117,6 @@ async def test_login(ac: AsyncClient):
     encrypted_user_data["signature"] = base64.b64encode(
         rsa.sign(json.dumps(encrypted_user_data).encode(), user_private_key, HASH_TYPE)).decode()
     response = await ac.post(url='/api/auth/login', json=encrypted_user_data)
-    print(response)
+    print(response.json())
     assert response.status_code == 200
-    # assert response.json()[]
+    # assert response[]
