@@ -35,4 +35,7 @@ def setup_keys() -> (rsa.PublicKey, rsa.PrivateKey):
 
 # is valid signature
 def is_valid_signature(message, signature, public_key):
-    return rsa.verify(message, signature, public_key) == HASH_TYPE
+    try:
+        return rsa.verify(message, signature, public_key) == HASH_TYPE
+    except rsa.pkcs1.VerificationError:
+        return False

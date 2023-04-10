@@ -1,29 +1,36 @@
 import base64
 import json
 
+import bcrypt
 import rsa
 from fastapi import APIRouter, Depends
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette import status
+from starlette.responses import JSONResponse
 
-from src.auth.schemas import EncryptedUserSchema, PublicKeySchema
+from src.auth.models import User
+from src.auth.schemas import PublicKeySchema, UserSchema
+from src.auth.utils import decrypt_dict
 from src.config import HASH_TYPE
 from src.database import get_async_session
+from src.schemas import ResponseSchema
 from src.utils import get_public_key, get_private_key, is_valid_signature
 
 router = APIRouter(tags=['Authentication'], prefix='/auth')
 
 
 @router.get("/login", response_model=PublicKeySchema, response_description="Get a server public key")
-async def get_public_key(raw_public_key: rsa.PublicKey = Depends(get_public_key)):
-    public_key = raw_public_key.save_pkcs1("PEM")
+async def get_public_key(server_public_key: rsa.PublicKey = Depends(get_public_key)):
+    public_key = server_public_key.save_pkcs1("PEM")
     return {"public_key": base64.b64encode(public_key),
             "signature": base64.b64encode(rsa.sign(public_key, get_private_key(), HASH_TYPE))}
 
 
-@router.post("/login")
-async def login(encrypted_user: EncryptedUserSchema,
-                # private_key: rsa.PrivateKey = Depends(get_private_key),
-                # public_key: rsa.PublicKey = Depends(get_public_key),
+@router.post("/login", response_model=ResponseSchema)
+async def login(encrypted_user: UserSchema,
+                server_private_key: rsa.PrivateKey = Depends(get_private_key),
+                # server_public_key: rsa.PublicKey = Depends(get_public_key),
                 session: AsyncSession = Depends(get_async_session)):
     message = encrypted_user.copy()
     del message.signature
@@ -31,5 +38,19 @@ async def login(encrypted_user: EncryptedUserSchema,
     is_valid = is_valid_signature(message.json().encode(),
                                   base64.b64decode(encrypted_user.signature.encode()),
                                   user_public_key)
-    if is_valid:
-        return {"status": "success"}
+    if not is_valid:
+        return JSONResponse(status_code=status.HTTP_403_FORBIDDEN,
+                            content={"status": "error", "data": None, "details": "invalid signature"})
+    decrypted_user = UserSchema(**decrypt_dict(encrypted_user.dict(), server_private_key))
+    query = select(User).filter_by(username=decrypted_user.username)
+    result = await session.execute(query)
+    user: User = result.scalars().unique().first()
+    if not (bcrypt.checkpw(decrypted_user.password.encode(), user.hashed_password.encode())
+            and user.uid == decrypted_user.uid):
+        return JSONResponse(status_code=status.HTTP_403_FORBIDDEN,
+                            content={"status": "error", "data": None, "details": "invalid credentials"})
+
+    # successful authentication
+    # give token
+    return JSONResponse(status_code=status.HTTP_200_OK,
+                        content={"status": "success", "data": None, "details": None})
