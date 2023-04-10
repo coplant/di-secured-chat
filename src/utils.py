@@ -1,6 +1,6 @@
 import rsa
 
-from src.config import PUBLIC_KEY, PRIVATE_KEY
+from src.config import PUBLIC_KEY, PRIVATE_KEY, HASH_TYPE
 
 
 # RSA Keys
@@ -31,3 +31,8 @@ def setup_keys() -> (rsa.PublicKey, rsa.PrivateKey):
     with open(PRIVATE_KEY, "wb") as file:
         file.write(private_key.save_pkcs1("PEM"))
     return public_key, private_key
+
+
+# is valid signature
+def is_valid_signature(message, signature, public_key):
+    return rsa.verify(message, signature, public_key) == HASH_TYPE
