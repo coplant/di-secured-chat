@@ -9,7 +9,7 @@ from httpx import Response, AsyncClient
 from sqlalchemy import insert, select
 
 from src.auth.models import User, Role
-from src.config import PUBLIC_KEY, PRIVATE_KEY, BASE_DIR
+from src.config import PUBLIC_KEY, PRIVATE_KEY, BASE_DIR, HASH_TYPE
 from src.utils import get_public_key, get_private_key
 from tests.conftest import client, async_session_maker
 
@@ -20,9 +20,9 @@ def test_get_public_key():
         raw_public_key = rsa.PublicKey.load_pkcs1(file.read())
     with open(PRIVATE_KEY, 'rb') as file:
         raw_private_key = rsa.PrivateKey.load_pkcs1(file.read())
-    raw_signature = rsa.sign(raw_public_key.save_pkcs1("PEM"), raw_private_key, 'SHA-256')
+    raw_signature = rsa.sign(raw_public_key.save_pkcs1("PEM"), raw_private_key, HASH_TYPE)
     public_key = base64.b64decode(response.json()['public_key'])
-    signature = rsa.sign(public_key, raw_private_key, 'SHA-256')
+    signature = rsa.sign(public_key, raw_private_key, HASH_TYPE)
 
     assert raw_public_key == get_public_key()
     assert raw_private_key == get_private_key()
@@ -30,7 +30,7 @@ def test_get_public_key():
     assert response.status_code == 200
     assert rsa.PublicKey.load_pkcs1(public_key) == raw_public_key
     assert base64.b64decode(response.json()['signature']) == raw_signature
-    assert rsa.verify(public_key, signature, raw_public_key) == 'SHA-256'
+    assert rsa.verify(public_key, signature, raw_public_key) == HASH_TYPE
     assert signature == raw_signature
 
 
@@ -111,10 +111,12 @@ async def test_login(ac: AsyncClient):
     encrypted_user_data["password"] = base64.b64encode(
         rsa.encrypt(raw_user_data["password"].encode(), get_public_key())).decode()
     encrypted_user_data["uid"] = base64.b64encode(
-        rsa.encrypt(hashlib.sha256(raw_user_data["uid"].encode()).digest(), get_public_key())).decode()
+        rsa.encrypt(hashlib.sha256(raw_user_data["uid"].encode()).hexdigest().encode(), get_public_key())).decode()
     encrypted_user_data["public_key"] = base64.b64encode(
         user_public_key.save_pkcs1("PEM")).decode()
     encrypted_user_data["signature"] = base64.b64encode(
-        rsa.sign(json.dumps(encrypted_user_data).encode(), user_private_key, "SHA-256")).decode()
+        rsa.sign(json.dumps(encrypted_user_data).encode(), user_private_key, HASH_TYPE)).decode()
     response = await ac.post(url='/api/auth/login', json=encrypted_user_data)
+    print(response)
     assert response.status_code == 200
+    # assert response.json()[]
