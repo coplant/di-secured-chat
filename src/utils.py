@@ -7,14 +7,14 @@ from src.config import PUBLIC_KEY, PRIVATE_KEY, HASH_TYPE
 def get_public_key() -> rsa.PublicKey:
     if PUBLIC_KEY.is_file():
         with open(PUBLIC_KEY, "rb") as file:
-            public_key = rsa.PublicKey.load_pkcs1(file.read())
+            public_key = rsa.PublicKey.load_pkcs1(file.read(), format="DER")
         return public_key
 
 
 def get_private_key() -> rsa.PrivateKey:
     if PRIVATE_KEY.is_file():
         with open(PRIVATE_KEY, "rb") as file:
-            private_key = rsa.PrivateKey.load_pkcs1(file.read())
+            private_key = rsa.PrivateKey.load_pkcs1(file.read(), format="DER")
         return private_key
 
 
@@ -27,9 +27,9 @@ def get_keys() -> (rsa.PublicKey, rsa.PrivateKey):
 def setup_keys() -> (rsa.PublicKey, rsa.PrivateKey):
     public_key, private_key = rsa.newkeys(1024)
     with open(PUBLIC_KEY, "wb") as file:
-        file.write(public_key.save_pkcs1("PEM"))
+        file.write(public_key.save_pkcs1(format="DER"))
     with open(PRIVATE_KEY, "wb") as file:
-        file.write(private_key.save_pkcs1("PEM"))
+        file.write(private_key.save_pkcs1(format="DER"))
     return public_key, private_key
 
 

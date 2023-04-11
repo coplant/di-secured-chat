@@ -5,8 +5,8 @@ import os
 load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-PUBLIC_KEY = BASE_DIR / "keys" / "public.pem"
-PRIVATE_KEY = BASE_DIR / "keys" / "private.pem"
+PUBLIC_KEY = BASE_DIR / "keys" / "public.der"
+PRIVATE_KEY = BASE_DIR / "keys" / "private.der"
 
 HASH_TYPE = "SHA-256"
 DEFAULT_CHUNK_SIZE = 1024 * 1024 * 5

@@ -5,5 +5,5 @@ from pydantic import BaseModel
 
 class ResponseSchema(BaseModel):
     status: str
-    data: Union[str, bytes, Any]
+    data: dict
     details: Union[Any, None]

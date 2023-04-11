@@ -25,18 +25,20 @@ router = APIRouter(tags=['Authentication'], prefix='/auth')
 
 @router.get("/login", response_model=PublicKeySchema, response_description="Get a server public key")
 async def get_public_key(server_public_key: rsa.PublicKey = Depends(get_public_key)):
-    public_key = server_public_key.save_pkcs1("PEM")
-    return {"public_key": base64.b64encode(public_key),
-            "signature": base64.b64encode(rsa.sign(public_key, get_private_key(), HASH_TYPE))}
+    public_key = server_public_key.save_pkcs1(format="DER")
+    data = {"public_key": base64.b64encode(public_key).decode(),
+            "signature": base64.b64encode(rsa.sign(public_key, get_private_key(), HASH_TYPE)).decode()}
+    return JSONResponse(status_code=status.HTTP_200_OK,
+                        content={"status": "error", "data": data, "details": ""})
 
 
-@router.post("/login", response_model=ResponseSchema)
+@router.post("/login", response_model=ResponseSchema, response_description="Log into the server")
 async def login(encrypted_user: UserSchema,
                 server_private_key: rsa.PrivateKey = Depends(get_private_key),
                 session: AsyncSession = Depends(get_async_session)):
     message = encrypted_user.copy()
     del message.signature
-    user_public_key = rsa.PublicKey.load_pkcs1(base64.b64decode(encrypted_user.public_key.encode()))
+    user_public_key = rsa.PublicKey.load_pkcs1(base64.b64decode(encrypted_user.public_key.encode()), format="DER")
     is_valid = is_valid_signature(message.json().encode(),
                                   base64.b64decode(encrypted_user.signature.encode()),
                                   user_public_key)
@@ -60,7 +62,9 @@ async def login(encrypted_user: UserSchema,
     token = secrets.token_hex(32)
     user.hashed_token = hashlib.sha256(token.encode()).hexdigest()
     user.logged_at = datetime.utcnow()
+    user.public_key = encrypted_user.public_key
     session.add(user)
+    await session.commit()
     encrypted_token = rsa.encrypt(token.encode(), user_public_key)
     data = {
         "token": base64.b64encode(encrypted_token).decode(),

@@ -17,10 +17,10 @@ from tests.conftest import client, async_session_maker
 def test_get_public_key():
     response: Response = client.get('/api/auth/login')
     with open(PUBLIC_KEY, 'rb') as file:
-        raw_public_key = rsa.PublicKey.load_pkcs1(file.read())
+        raw_public_key = rsa.PublicKey.load_pkcs1(file.read(), format="DER")
     with open(PRIVATE_KEY, 'rb') as file:
-        raw_private_key = rsa.PrivateKey.load_pkcs1(file.read())
-    raw_signature = rsa.sign(raw_public_key.save_pkcs1("PEM"), raw_private_key, HASH_TYPE)
+        raw_private_key = rsa.PrivateKey.load_pkcs1(file.read(), format="DER")
+    raw_signature = rsa.sign(raw_public_key.save_pkcs1(format="DER"), raw_private_key, HASH_TYPE)
     public_key = base64.b64decode(response.json()['public_key'])
     signature = rsa.sign(public_key, raw_private_key, HASH_TYPE)
 
@@ -28,7 +28,7 @@ def test_get_public_key():
     assert raw_private_key == get_private_key()
 
     assert response.status_code == 200
-    assert rsa.PublicKey.load_pkcs1(public_key) == raw_public_key
+    assert rsa.PublicKey.load_pkcs1(public_key, format="DER") == raw_public_key
     assert base64.b64decode(response.json()['signature']) == raw_signature
     assert rsa.verify(public_key, signature, raw_public_key) == HASH_TYPE
     assert signature == raw_signature
@@ -100,10 +100,10 @@ async def test_login(ac: AsyncClient):
     encrypted_user_data = {}
 
     # получаем ключи клиента
-    with open(BASE_DIR / "keys" / "user_private.pem", "rb") as file:
-        user_private_key = rsa.PrivateKey.load_pkcs1(file.read())
-    with open(BASE_DIR / "keys" / "user_public.pem", "rb") as file:
-        user_public_key = rsa.PublicKey.load_pkcs1(file.read())
+    with open(BASE_DIR / "keys" / "user_private.der", "rb") as file:
+        user_private_key = rsa.PrivateKey.load_pkcs1(file.read(), format="DER")
+    with open(BASE_DIR / "keys" / "user_public.der", "rb") as file:
+        user_public_key = rsa.PublicKey.load_pkcs1(file.read(), format="DER")
 
     # собираем словарь — зашифровываем уязвимые данные, передаем при помощи base64
     encrypted_user_data["username"] = base64.b64encode(
@@ -113,10 +113,12 @@ async def test_login(ac: AsyncClient):
     encrypted_user_data["uid"] = base64.b64encode(
         rsa.encrypt(hashlib.sha256(raw_user_data["uid"].encode()).hexdigest().encode(), get_public_key())).decode()
     encrypted_user_data["public_key"] = base64.b64encode(
-        user_public_key.save_pkcs1("PEM")).decode()
+        user_public_key.save_pkcs1(format="DER")).decode()
     encrypted_user_data["signature"] = base64.b64encode(
         rsa.sign(json.dumps(encrypted_user_data).encode(), user_private_key, HASH_TYPE)).decode()
     response = await ac.post(url='/api/auth/login', json=encrypted_user_data)
     print(response.json())
     assert response.status_code == 200
-    # assert response[]
+    assert response.json()['status'] == 'success'
+
+    # todo: assert signature
