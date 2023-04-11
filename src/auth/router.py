@@ -8,6 +8,8 @@ from datetime import datetime
 import bcrypt
 import rsa
 from fastapi import APIRouter, Depends, HTTPException
+from pyasn1 import error
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
@@ -18,7 +20,7 @@ from src.auth.schemas import PublicKeySchema, UserSchema, TokenResponseSchema
 from src.auth.utils import decrypt_dict
 from src.config import HASH_TYPE
 from src.database import get_async_session
-from src.schemas import ResponseSchema
+from src.schemas import ResponseSchema, ValidationResponseSchema
 from src.utils import get_public_key, get_private_key, is_valid_signature
 
 router = APIRouter(tags=['Authentication'], prefix='/auth')
@@ -33,13 +35,19 @@ async def get_public_key(server_public_key: rsa.PublicKey = Depends(get_public_k
                         content={"status": "error", "data": data, "details": ""})
 
 
-@router.post("/login", response_model=TokenResponseSchema, response_description="Log into the server")
+@router.post("/login", response_model=TokenResponseSchema,
+             response_description="Log into the server",
+             responses={422: {"model": ValidationResponseSchema}})
 async def login(encrypted_user: UserSchema,
                 server_private_key: rsa.PrivateKey = Depends(get_private_key),
                 session: AsyncSession = Depends(get_async_session)):
     message = encrypted_user.copy()
     del message.signature
-    user_public_key = rsa.PublicKey.load_pkcs1(base64.b64decode(encrypted_user.public_key.encode()), format="DER")
+    try:
+        user_public_key = rsa.PublicKey.load_pkcs1(base64.b64decode(encrypted_user.public_key.encode()), format="DER")
+    except error.SubstrateUnderrunError:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid public key")
+
     try:
         is_valid = is_valid_signature(message.json().encode(),
                                       base64.b64decode(encrypted_user.signature.encode()),
