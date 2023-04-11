@@ -2,11 +2,11 @@ import base64
 import binascii
 import hashlib
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import bcrypt
 import rsa
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from pyasn1 import error
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +15,7 @@ from starlette.responses import JSONResponse
 
 from src.auth.models import User
 from src.auth.schemas import PublicKeySchema, UserSchema, TokenResponseSchema, LogoutResponseModel, LoginUserSchema, \
-    CreateUserSchema
+    CreateUserSchema, ChangePasswordSchema
 from src.auth.utils import decrypt_dict, Roles
 from src.config import HASH_TYPE
 from src.database import get_async_session
@@ -73,6 +73,11 @@ async def login(encrypted_user: LoginUserSchema,
     user.hashed_token = hashlib.sha256(token.encode()).hexdigest()
     user.logged_at = datetime.utcnow()
     user.public_key = encrypted_user.public_key
+
+    # check if password still valid
+    if datetime.utcnow() - user.changed_at >= timedelta(days=60):
+        user.has_changed_password = False
+
     session.add(user)
     await session.commit()
     encrypted_token = rsa.encrypt(token.encode(), user_public_key)
@@ -80,6 +85,7 @@ async def login(encrypted_user: LoginUserSchema,
         "token": base64.b64encode(encrypted_token).decode(),
         "signature": base64.b64encode(rsa.sign(encrypted_token, server_private_key, HASH_TYPE)).decode()
     }
+
     return JSONResponse(status_code=status.HTTP_200_OK,
                         content={"status": "success", "data": data, "details": None})
 
@@ -101,7 +107,9 @@ async def logout(user: User = Depends(get_current_user),
 async def create_user(raw_data: CreateUserSchema,
                       user: User = Depends(get_current_user),
                       session: AsyncSession = Depends(get_async_session)):
-    if user.role_id == Roles.ADMIN.value:
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
+    if user.role_id == Roles.ADMIN.value and user.has_changed_password:
         try:
             user_data = {}
             server_private_key = get_private_key()
@@ -121,3 +129,24 @@ async def create_user(raw_data: CreateUserSchema,
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid data")
     else:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid permissions")
+
+
+@router.patch("/change-password", response_model=ResponseSchema)
+async def change_password(data: ChangePasswordSchema,
+                          user: User = Depends(get_current_user),
+                          session: AsyncSession = Depends(get_async_session)):
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
+    try:
+        user_password = rsa.decrypt(base64.b64decode(data.password), get_private_key()).decode()
+        bcrypt_salt = bcrypt.gensalt()
+        user.hashed_password = bcrypt.hashpw(user_password.encode(), bcrypt_salt).decode()
+        user.hashed_token = ""
+        user.changed_at = datetime.utcnow()
+        user.has_changed_password = True
+        session.add(user)
+        await session.commit()
+        return JSONResponse(status_code=status.HTTP_200_OK,
+                            content={"status": "success", "data": None, "details": "password changed"})
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid data")

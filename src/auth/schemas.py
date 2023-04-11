@@ -28,8 +28,12 @@ class TokenResponseSchema(ResponseSchema):
 
 
 class LogoutResponseModel(ResponseSchema):
-    details: str = "logged out"
+    details: str = Field(..., example="logged out")
 
 
 class CreateUserSchema(UserSchema):
-    name: str = Field(..., example="user name")
+    name: str = Field(..., example="name")
+
+
+class ChangePasswordSchema(BaseModel):
+    password: str = Field(..., example="password")
