@@ -3,6 +3,7 @@ import os
 from typing import AsyncGenerator
 
 import pytest
+import rsa
 from fastapi.testclient import TestClient
 from httpcore import HTTPProxy
 from httpx import AsyncClient, Proxy
@@ -10,8 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 
 from src.database import get_async_session, Base
 from src.config import (DB_HOST_TEST, DB_NAME_TEST, DB_PASS_TEST, DB_PORT_TEST,
-                        DB_USER_TEST)
+                        DB_USER_TEST, BASE_DIR)
 from src.main import app as application
+from src.utils import get_public_key, get_private_key
 
 # DATABASE
 DATABASE_URL_TEST = f"postgresql+asyncpg://{DB_USER_TEST}:{DB_PASS_TEST}@{DB_HOST_TEST}:{DB_PORT_TEST}/{DB_NAME_TEST}"
@@ -58,3 +60,16 @@ client = TestClient(application)
 async def ac() -> AsyncGenerator[AsyncClient, None]:
     async with AsyncClient(app=application, base_url="http://test", ) as ac:
         yield ac
+
+
+@pytest.fixture(scope="session")
+async def get_keys():
+    with open(BASE_DIR / "keys" / "user_private.der", "rb") as file:
+        user_private_key = rsa.PrivateKey.load_pkcs1(file.read(), format="DER")
+    with open(BASE_DIR / "keys" / "user_public.der", "rb") as file:
+        user_public_key = rsa.PublicKey.load_pkcs1(file.read(), format="DER")
+
+    server_public_key = get_public_key()
+    server_private_key = get_private_key()
+
+    return server_private_key, server_public_key, user_private_key, user_public_key

@@ -22,3 +22,7 @@ class PublicKeySchema(ResponseSchema):
 class TokenResponseSchema(ResponseSchema):
     data: dict = Field(..., example={"token": "base64 encoded token",
                                      "signature": "base64 encoded signature of token"})
+
+
+class LogoutResponseModel(ResponseSchema):
+    details: str = "logged out"

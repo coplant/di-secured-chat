@@ -7,7 +7,7 @@ from datetime import datetime
 
 import bcrypt
 import rsa
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pyasn1 import error
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -16,12 +16,12 @@ from starlette import status
 from starlette.responses import JSONResponse
 
 from src.auth.models import User
-from src.auth.schemas import PublicKeySchema, UserSchema, TokenResponseSchema
+from src.auth.schemas import PublicKeySchema, UserSchema, TokenResponseSchema, LogoutResponseModel
 from src.auth.utils import decrypt_dict
 from src.config import HASH_TYPE
 from src.database import get_async_session
 from src.schemas import ResponseSchema, ValidationResponseSchema
-from src.utils import get_public_key, get_private_key, is_valid_signature
+from src.utils import get_public_key, get_private_key, is_valid_signature, get_current_user
 
 router = APIRouter(tags=['Authentication'], prefix='/auth')
 
@@ -83,3 +83,15 @@ async def login(encrypted_user: UserSchema,
     }
     return JSONResponse(status_code=status.HTTP_200_OK,
                         content={"status": "success", "data": data, "details": None})
+
+
+@router.get("/logout", response_model=LogoutResponseModel)
+async def logout(user: User = Depends(get_current_user),
+                 session: AsyncSession = Depends(get_async_session)):
+    if user:
+        user.hashed_token = ""
+        session.add(user)
+        await session.commit()
+        return JSONResponse(status_code=status.HTTP_200_OK,
+                            content={"status": "success", "data": None, "details": "logged out"})
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid token")

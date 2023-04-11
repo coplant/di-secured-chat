@@ -89,7 +89,9 @@ async def test_add_admin():
         assert expected_user.is_active == actual_user.is_active
 
 
-async def test_login(ac: AsyncClient):
+async def test_login(ac: AsyncClient, get_keys):
+    server_private_key, server_public_key, user_private_key, user_public_key = get_keys
+
     # то, что вводит клиент
     raw_user_data = {
         "username": "admin",
@@ -100,29 +102,47 @@ async def test_login(ac: AsyncClient):
     encrypted_user_data = {}
 
     # получаем ключи клиента
-    with open(BASE_DIR / "keys" / "user_private.der", "rb") as file:
-        user_private_key = rsa.PrivateKey.load_pkcs1(file.read(), format="DER")
-    with open(BASE_DIR / "keys" / "user_public.der", "rb") as file:
-        user_public_key = rsa.PublicKey.load_pkcs1(file.read(), format="DER")
+    # with open(BASE_DIR / "keys" / "user_private.der", "rb") as file:
+    #     user_private_key = rsa.PrivateKey.load_pkcs1(file.read(), format="DER")
+    # with open(BASE_DIR / "keys" / "user_public.der", "rb") as file:
+    #     user_public_key = rsa.PublicKey.load_pkcs1(file.read(), format="DER")
 
     # собираем словарь — зашифровываем уязвимые данные, передаем при помощи base64
     encrypted_user_data["username"] = base64.b64encode(
-        rsa.encrypt(raw_user_data["username"].encode(), get_public_key())).decode()
+        rsa.encrypt(raw_user_data["username"].encode(), server_public_key)).decode()
     encrypted_user_data["password"] = base64.b64encode(
-        rsa.encrypt(raw_user_data["password"].encode(), get_public_key())).decode()
+        rsa.encrypt(raw_user_data["password"].encode(), server_public_key)).decode()
     encrypted_user_data["uid"] = base64.b64encode(
-        rsa.encrypt(hashlib.sha256(raw_user_data["uid"].encode()).hexdigest().encode(), get_public_key())).decode()
+        rsa.encrypt(hashlib.sha256(raw_user_data["uid"].encode()).hexdigest().encode(), server_public_key)).decode()
     encrypted_user_data["public_key"] = base64.b64encode(
         user_public_key.save_pkcs1(format="DER")).decode()
     encrypted_user_data["signature"] = base64.b64encode(
         rsa.sign(json.dumps(encrypted_user_data).encode(), user_private_key, HASH_TYPE)).decode()
     response = await ac.post(url='/api/auth/login', json=encrypted_user_data)
-    print(response.json())
 
-    token = response.json()['data']['token']
+    global global_token
+    global_token = response.json()['data']['token']
     signature = response.json()['data']['signature']
 
     assert response.status_code == 200
     assert response.json()['status'] == 'success'
     assert response.json()['data']
-    assert rsa.verify(base64.b64decode(token), base64.b64decode(signature), get_public_key()) == HASH_TYPE
+    assert rsa.verify(base64.b64decode(global_token), base64.b64decode(signature), server_public_key) == HASH_TYPE
+
+
+async def test_valid_logout(ac: AsyncClient, get_keys):
+    server_private_key, server_public_key, user_private_key, user_public_key = get_keys
+    token = global_token
+    b64_token_to_usr = base64.b64decode(token)
+    raw_token = rsa.decrypt(b64_token_to_usr, user_private_key)
+    token = rsa.encrypt(raw_token, server_public_key)
+    b64_token_to_srv = base64.urlsafe_b64encode(token).decode()
+    response = await ac.get(f"/api/auth/logout?token={b64_token_to_srv}")
+    assert response.status_code == 200
+    assert response.json()['status'] == 'success'
+    assert response.json()['details'] == 'logged out'
+
+
+async def test_invalid_logout(ac: AsyncClient):
+    response = await ac.get("/api/auth/logout?token=abc")
+    assert response.status_code == 403
