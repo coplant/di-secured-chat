@@ -21,7 +21,7 @@ def test_get_public_key():
     with open(PRIVATE_KEY, 'rb') as file:
         raw_private_key = rsa.PrivateKey.load_pkcs1(file.read(), format="DER")
     raw_signature = rsa.sign(raw_public_key.save_pkcs1(format="DER"), raw_private_key, HASH_TYPE)
-    public_key = base64.b64decode(response.json()['public_key'])
+    public_key = base64.b64decode(response.json()['data']['public_key'])
     signature = rsa.sign(public_key, raw_private_key, HASH_TYPE)
 
     assert raw_public_key == get_public_key()
@@ -29,7 +29,7 @@ def test_get_public_key():
 
     assert response.status_code == 200
     assert rsa.PublicKey.load_pkcs1(public_key, format="DER") == raw_public_key
-    assert base64.b64decode(response.json()['signature']) == raw_signature
+    assert base64.b64decode(response.json()['data']['signature']) == raw_signature
     assert rsa.verify(public_key, signature, raw_public_key) == HASH_TYPE
     assert signature == raw_signature
 
@@ -96,7 +96,7 @@ async def test_login(ac: AsyncClient):
         "password": "uZqXYrK3Mu_Fg-7w",
         "uid": "B272CE72-DA23-4D68-AB4F-26ABFD9735CA",
     }
-    # то, что отправится
+    # то, что отправится после обработки
     encrypted_user_data = {}
 
     # получаем ключи клиента
@@ -118,7 +118,11 @@ async def test_login(ac: AsyncClient):
         rsa.sign(json.dumps(encrypted_user_data).encode(), user_private_key, HASH_TYPE)).decode()
     response = await ac.post(url='/api/auth/login', json=encrypted_user_data)
     print(response.json())
+
+    token = response.json()['data']['token']
+    signature = response.json()['data']['signature']
+
     assert response.status_code == 200
     assert response.json()['status'] == 'success'
-
-    # todo: assert signature
+    assert response.json()['data']
+    assert rsa.verify(base64.b64decode(token), base64.b64decode(signature), get_public_key()) == HASH_TYPE
