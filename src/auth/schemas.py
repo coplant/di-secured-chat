@@ -17,3 +17,8 @@ class UserSchema(BaseModel):
 class PublicKeySchema(ResponseSchema):
     data: dict = Field(..., example={"public_key": "base64 encoded public key",
                                      "signature": "base64 encoded signature of public key"})
+
+
+class TokenResponseSchema(ResponseSchema):
+    data: dict = Field(..., example={"token": "base64 encoded token",
+                                     "signature": "base64 encoded signature of token"})
