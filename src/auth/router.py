@@ -1,7 +1,6 @@
 import base64
 import binascii
 import hashlib
-import json
 import secrets
 from datetime import datetime
 
@@ -9,15 +8,15 @@ import bcrypt
 import rsa
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pyasn1 import error
-from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 from starlette.responses import JSONResponse
 
 from src.auth.models import User
-from src.auth.schemas import PublicKeySchema, UserSchema, TokenResponseSchema, LogoutResponseModel
-from src.auth.utils import decrypt_dict
+from src.auth.schemas import PublicKeySchema, UserSchema, TokenResponseSchema, LogoutResponseModel, LoginUserSchema, \
+    CreateUserSchema
+from src.auth.utils import decrypt_dict, Roles
 from src.config import HASH_TYPE
 from src.database import get_async_session
 from src.schemas import ResponseSchema, ValidationResponseSchema
@@ -38,7 +37,7 @@ async def get_public_key(server_public_key: rsa.PublicKey = Depends(get_public_k
 @router.post("/login", response_model=TokenResponseSchema,
              response_description="Log into the server",
              responses={422: {"model": ValidationResponseSchema}})
-async def login(encrypted_user: UserSchema,
+async def login(encrypted_user: LoginUserSchema,
                 server_private_key: rsa.PrivateKey = Depends(get_private_key),
                 session: AsyncSession = Depends(get_async_session)):
     message = encrypted_user.copy()
@@ -95,3 +94,30 @@ async def logout(user: User = Depends(get_current_user),
         return JSONResponse(status_code=status.HTTP_200_OK,
                             content={"status": "success", "data": None, "details": "logged out"})
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid token")
+
+
+#
+@router.post("/create-user", response_model=ResponseSchema, responses={422: {"model": ValidationResponseSchema}})
+async def create_user(raw_data: CreateUserSchema,
+                      user: User = Depends(get_current_user),
+                      session: AsyncSession = Depends(get_async_session)):
+    if user.role_id == Roles.ADMIN.value:
+        try:
+            user_data = {}
+            server_private_key = get_private_key()
+            user_data["uid"] = rsa.decrypt(base64.b64decode(raw_data.uid), server_private_key).decode()
+            user_data["name"] = rsa.decrypt(base64.b64decode(raw_data.name), server_private_key).decode()
+            user_data["username"] = rsa.decrypt(base64.b64decode(raw_data.username), server_private_key).decode()
+            user_password = rsa.decrypt(base64.b64decode(raw_data.password), server_private_key).decode()
+            bcrypt_salt = bcrypt.gensalt()
+            user_data["hashed_password"] = bcrypt.hashpw(user_password.encode(), bcrypt_salt).decode()
+            user_data["role_id"] = 0
+            user_to_add = User(**user_data)
+            session.add(user_to_add)
+            await session.commit()
+            return JSONResponse(status_code=status.HTTP_201_CREATED,
+                                content={"status": "success", "data": None, "details": "successfully added"})
+        except Exception:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid data")
+    else:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid permissions")

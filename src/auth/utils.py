@@ -1,8 +1,14 @@
 import base64
+from enum import Enum
 
 import rsa
 from fastapi import HTTPException
 from starlette import status
+
+
+class Roles(Enum):
+    ADMIN = 100
+    USER = 0
 
 
 def decrypt_dict(data: dict, private_key: rsa.PrivateKey):

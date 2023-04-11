@@ -10,6 +10,9 @@ class UserSchema(BaseModel):
     username: str = Field(..., example="base64 encoded username")
     password: str = Field(..., example="base64 encoded password")
     uid: str = Field(..., example="base64 encoded uid")
+
+
+class LoginUserSchema(UserSchema):
     public_key: str = Field(..., example="base64 encoded uid")
     signature: str = Field(..., example="base64 encoded signature of whole data")
 
@@ -26,3 +29,7 @@ class TokenResponseSchema(ResponseSchema):
 
 class LogoutResponseModel(ResponseSchema):
     details: str = "logged out"
+
+
+class CreateUserSchema(UserSchema):
+    name: str = Field(..., example="user name")

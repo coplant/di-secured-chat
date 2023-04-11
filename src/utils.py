@@ -59,11 +59,3 @@ async def get_current_user(token: str = Query(...),
         return user
     except Exception:
         raise HTTPException(status_code=403, detail="invalid token")
-
-#     token = secrets.token_hex(32)
-#     user.hashed_token = hashlib.sha256(token.encode()).hexdigest()
-#     user.logged_at = datetime.utcnow()
-#     user.public_key = encrypted_user.public_key
-#     session.add(user)
-#     await session.commit()
-#     encrypted_token = rsa.encrypt(token.encode(), user_public_key)
