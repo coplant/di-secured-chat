@@ -20,7 +20,7 @@ from src.auth.utils import decrypt_dict, Roles
 from src.config import HASH_TYPE
 from src.database import get_async_session
 from src.schemas import ResponseSchema, ValidationResponseSchema
-from src.utils import RSA, get_current_user  # get_public_key, get_private_key, is_valid_signature
+from src.utils import RSA, get_current_user
 
 router = APIRouter(tags=['Authentication'], prefix='/auth')
 
