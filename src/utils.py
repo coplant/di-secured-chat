@@ -1,5 +1,6 @@
 import base64
 import hashlib
+import json
 
 import rsa
 from fastapi import Query, Depends, HTTPException
@@ -84,3 +85,10 @@ async def get_current_user(token: str = Query(...),
         return user
     except Exception:
         raise HTTPException(status_code=403, detail="invalid token")
+
+
+def prepare_encrypted(data: dict, from_private_key: rsa.PrivateKey, to_public_key: rsa.PublicKey):
+    signature = base64.b64encode(rsa.sign(json.dumps(data).encode(), from_private_key, HASH_TYPE)).decode()
+    to_send = {"data": data, "signature": signature}
+    to_send = json.dumps(to_send)
+    return RSA.encrypt(to_send.encode(), to_public_key)

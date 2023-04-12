@@ -1,26 +1,28 @@
 import base64
 import binascii
 import hashlib
+import json
 import secrets
 from datetime import datetime, timedelta
 
 import bcrypt
 import rsa
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Body, Response
 from pyasn1 import error
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 from starlette.responses import JSONResponse
 
+from src.auth.utils import Roles
 from src.auth.models import User
-from src.auth.schemas import PublicKeySchema, UserSchema, TokenResponseSchema, LogoutResponseModel, LoginUserSchema, \
-    CreateUserSchema, ChangePasswordSchema
-from src.auth.utils import decrypt_dict, Roles
+from src.auth.schemas import (PublicKeySchema, LogoutResponseModel,
+                              CreateUserSchema, ChangePasswordSchema,
+                              LoginRequestSchema)
 from src.config import HASH_TYPE
 from src.database import get_async_session
 from src.schemas import ResponseSchema, ValidationResponseSchema
-from src.utils import RSA, get_current_user
+from src.utils import RSA, get_current_user, prepare_encrypted
 
 router = APIRouter(tags=['Authentication'], prefix='/auth')
 
@@ -34,45 +36,69 @@ async def get_public_key(server_public_key: rsa.PublicKey = Depends(RSA.get_publ
                         content={"status": "success", "data": data, "details": ""})
 
 
-@router.post("/login", response_model=TokenResponseSchema,
+@router.post("/login",
+             response_model=LoginRequestSchema,
              response_description="Log into the server",
-             responses={422: {"model": ValidationResponseSchema}})
-async def login(encrypted_user: LoginUserSchema,
+             responses={422: {"model": ""}})
+async def login(encrypted: bytes = Body(..., media_type="application/octet-stream"),
                 server_private_key: rsa.PrivateKey = Depends(RSA.get_private_key),
                 session: AsyncSession = Depends(get_async_session)):
-    message = encrypted_user.copy()
-    del message.signature
+    decrypted = LoginRequestSchema(**json.loads(RSA.decrypt(encrypted, server_private_key)))
     try:
-        user_public_key = rsa.PublicKey.load_pkcs1(base64.b64decode(encrypted_user.public_key.encode()), format="DER")
+        user_public_key = rsa.PublicKey.load_pkcs1(base64.b64decode(decrypted.data.public_key), format="DER")
     except error.SubstrateUnderrunError:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid public key")
-
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
     try:
-        is_valid = RSA.verify_signature(message.json().encode(),
-                                        base64.b64decode(encrypted_user.signature.encode()),
+        is_valid = RSA.verify_signature(decrypted.data.json().encode(),
+                                        base64.b64decode(decrypted.signature),
                                         user_public_key)
-    # invalid signature
     except (binascii.Error,):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid signature")
+        data = {
+            "status": "error",
+            "data": None,
+            "details": "invalid signature"
+        }
+        encrypted = prepare_encrypted(data, server_private_key, user_public_key)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)
     if not is_valid:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid signature")
+        data = {
+            "status": "error",
+            "data": None,
+            "details": "invalid signature"
+        }
+        encrypted = prepare_encrypted(data, server_private_key, user_public_key)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)
 
     # valid signature
-    decrypted_user = UserSchema(**decrypt_dict(encrypted_user.dict(), server_private_key))
-    query = select(User).filter_by(username=decrypted_user.username)
+    query = select(User).filter_by(username=decrypted.data.username)
     result = await session.execute(query)
     user: User = result.scalars().unique().first()
 
-    # invalid credentials
-    if not (bcrypt.checkpw(decrypted_user.password.encode(), user.hashed_password.encode())
-            and user.uid == decrypted_user.uid):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid credentials")
+    if not user:
+        data = {
+            "status": "error",
+            "data": None,
+            "details": "invalid credentials"
+        }
+        encrypted = prepare_encrypted(data, server_private_key, user_public_key)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)
+
+    # # invalid credentials
+    if not (bcrypt.checkpw(decrypted.data.password.encode(), user.hashed_password.encode())
+            and user.uid == hashlib.sha256(decrypted.data.uid.encode()).hexdigest()):
+        data = {
+            "status": "error",
+            "data": None,
+            "details": "invalid credentials"
+        }
+        encrypted = prepare_encrypted(data, server_private_key, user_public_key)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)
 
     # successful authentication
     token = secrets.token_hex(32)
     user.hashed_token = hashlib.sha256(token.encode()).hexdigest()
     user.logged_at = datetime.utcnow()
-    user.public_key = encrypted_user.public_key
+    user.public_key = decrypted.data.public_key
 
     # check if password still valid
     if datetime.utcnow() - user.changed_at >= timedelta(days=60):
@@ -80,16 +106,18 @@ async def login(encrypted_user: LoginUserSchema,
 
     session.add(user)
     await session.commit()
-    encrypted_token = rsa.encrypt(token.encode(), user_public_key)
+    status_code = status.HTTP_307_TEMPORARY_REDIRECT if not user.has_changed_password else status.HTTP_200_OK
+    status_info = "temporary" if not user.has_changed_password else "success"
+    details = "password expired" if not user.has_changed_password else None
+
     data = {
-        "token": base64.b64encode(encrypted_token).decode(),
-        "signature": base64.b64encode(rsa.sign(encrypted_token, server_private_key, HASH_TYPE)).decode()
+        "status": status_info,
+        "data": {"token": token},
+        "details": details
     }
-    if not user.has_changed_password:
-        return JSONResponse(status_code=status.HTTP_307_TEMPORARY_REDIRECT,
-                            content={"status": "temporary", "data": data, "details": "password expired"})
-    return JSONResponse(status_code=status.HTTP_200_OK,
-                        content={"status": "success", "data": data, "details": None})
+    encrypted = prepare_encrypted(data, server_private_key, user_public_key)
+    response = Response(status_code=status_code, content=encrypted, media_type="application/octet-stream")
+    return response
 
 
 @router.get("/logout", response_model=LogoutResponseModel, responses={422: {"model": ValidationResponseSchema}})

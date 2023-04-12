@@ -1,30 +1,30 @@
-from datetime import datetime
-from typing import Optional, Union
-
 from pydantic import BaseModel, Field
 
 from src.schemas import ResponseSchema
 
 
 class UserSchema(BaseModel):
-    username: str = Field(..., example="base64 encoded username")
-    password: str = Field(..., example="base64 encoded password")
-    uid: str = Field(..., example="base64 encoded uid")
+    username: str = Field(..., example="username")
+    password: str = Field(..., example="password")
+    uid: str = Field(..., example="uid")
 
 
 class LoginUserSchema(UserSchema):
     public_key: str = Field(..., example="base64 encoded uid")
-    signature: str = Field(..., example="base64 encoded signature of whole data")
+
+
+class RequestSchema(BaseModel):
+    data: dict = Field(..., example="nested json data")
+    signature: str = Field(..., example="base64 encoded signature of data")
+
+
+class LoginRequestSchema(RequestSchema):
+    data: LoginUserSchema
 
 
 class PublicKeySchema(ResponseSchema):
     data: dict = Field(..., example={"public_key": "base64 encoded public key",
                                      "signature": "base64 encoded signature of public key"})
-
-
-class TokenResponseSchema(ResponseSchema):
-    data: dict = Field(..., example={"token": "base64 encoded token",
-                                     "signature": "base64 encoded signature of token"})
 
 
 class LogoutResponseModel(ResponseSchema):
