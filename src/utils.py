@@ -6,6 +6,7 @@ import rsa
 from fastapi import Query, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette import status
 
 from src.auth.models import User
 from src.config import PUBLIC_KEY, PRIVATE_KEY, HASH_TYPE, DECRYPTION_CHUNK_SIZE
@@ -84,7 +85,7 @@ async def get_current_user(token: str = Query(...),
         user = result.scalars().unique().first()
         return user
     except Exception:
-        raise HTTPException(status_code=403, detail="invalid token")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
 
 
 def prepare_encrypted(data: dict, from_private_key: rsa.PrivateKey, to_public_key: rsa.PublicKey):

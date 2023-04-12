@@ -120,19 +120,28 @@ async def login(encrypted: bytes = Body(..., media_type="application/octet-strea
     return response
 
 
-@router.get("/logout", response_model=LogoutResponseModel, responses={422: {"model": ValidationResponseSchema}})
+@router.get("/logout", response_model=LogoutResponseModel, responses={422: {"model": ""}})
 async def logout(user: User = Depends(get_current_user),
+                 server_private_key: rsa.PrivateKey = Depends(RSA.get_private_key),
                  session: AsyncSession = Depends(get_async_session)):
-    if user:
-        user.hashed_token = ""
-        session.add(user)
-        await session.commit()
-        return JSONResponse(status_code=status.HTTP_200_OK,
-                            content={"status": "success", "data": None, "details": "logged out"})
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid token")
+    if not user:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
+
+    data = {
+        "status": "success",
+        "data": None,
+        "details": "logged out"
+    }
+    encrypted = prepare_encrypted(data,
+                                  server_private_key,
+                                  rsa.PublicKey.load_pkcs1(base64.b64decode(user.public_key), format="DER"))
+    response = Response(status_code=status.HTTP_200_OK, content=encrypted, media_type="application/octet-stream")
+    user.hashed_token = ""
+    session.add(user)
+    await session.commit()
+    return response
 
 
-#
 @router.post("/create-user", response_model=ResponseSchema, responses={422: {"model": ValidationResponseSchema}})
 async def create_user(raw_data: CreateUserSchema,
                       user: User = Depends(get_current_user),

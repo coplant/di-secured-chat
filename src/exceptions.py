@@ -1,9 +1,8 @@
 from fastapi import HTTPException
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
-from starlette.responses import JSONResponse, Response
-
-from src.utils import prepare_encrypted
+from starlette import status
+from starlette.responses import Response
 
 
 async def http_exception_handler(request, exc):
@@ -15,6 +14,5 @@ async def http_exception_handler(request, exc):
 
 
 async def validation_exception_handler(request, exc):
-    return Response(
-        status_code=422
-    )
+    return Response(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    media_type="application/octet-stream")
