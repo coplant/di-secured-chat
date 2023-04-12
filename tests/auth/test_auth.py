@@ -11,7 +11,7 @@ from sqlalchemy import insert, select
 
 from src.auth.models import User, Role
 from src.config import PUBLIC_KEY, PRIVATE_KEY, BASE_DIR, HASH_TYPE
-from src.utils import get_public_key, get_private_key, get_current_user
+from src.utils import RSA, get_current_user
 from tests.auth.utils import get_token_from_client
 from tests.conftest import client, async_session_maker
 
@@ -26,8 +26,8 @@ def test_get_public_key():
     public_key = base64.b64decode(response.json()['data']['public_key'])
     signature = rsa.sign(public_key, raw_private_key, HASH_TYPE)
 
-    assert raw_public_key == get_public_key()
-    assert raw_private_key == get_private_key()
+    assert raw_public_key == RSA.get_public_key()
+    assert raw_private_key == RSA.get_private_key()
 
     assert response.status_code == 200
     assert rsa.PublicKey.load_pkcs1(public_key, format="DER") == raw_public_key
@@ -203,7 +203,7 @@ async def test_change_password(ac: AsyncClient, get_keys):
         "uid": "B272CE72-DA23-4D68-AB4F-26ABFD9735CA",
     })
     token = get_token_from_client(token, get_keys)
-    token = rsa.decrypt(base64.urlsafe_b64decode(token), get_private_key())
+    token = rsa.decrypt(base64.urlsafe_b64decode(token), RSA.get_private_key())
     query = select(User).filter_by(hashed_token=hashlib.sha256(token).hexdigest())
     async with async_session_maker() as session:
         result = await session.execute(query)

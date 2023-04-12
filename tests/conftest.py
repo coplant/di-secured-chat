@@ -13,7 +13,7 @@ from src.database import get_async_session, Base
 from src.config import (DB_HOST_TEST, DB_NAME_TEST, DB_PASS_TEST, DB_PORT_TEST,
                         DB_USER_TEST, BASE_DIR)
 from src.main import app as application
-from src.utils import get_public_key, get_private_key
+from src.utils import RSA
 
 # DATABASE
 DATABASE_URL_TEST = f"postgresql+asyncpg://{DB_USER_TEST}:{DB_PASS_TEST}@{DB_HOST_TEST}:{DB_PORT_TEST}/{DB_NAME_TEST}"
@@ -69,7 +69,7 @@ async def get_keys():
     with open(BASE_DIR / "keys" / "user_public.der", "rb") as file:
         user_public_key = rsa.PublicKey.load_pkcs1(file.read(), format="DER")
 
-    server_public_key = get_public_key()
-    server_private_key = get_private_key()
+    server_public_key = RSA.get_public_key()
+    server_private_key = RSA.get_private_key()
 
     return server_private_key, server_public_key, user_private_key, user_public_key

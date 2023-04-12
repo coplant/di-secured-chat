@@ -20,25 +20,25 @@ from src.auth.utils import decrypt_dict, Roles
 from src.config import HASH_TYPE
 from src.database import get_async_session
 from src.schemas import ResponseSchema, ValidationResponseSchema
-from src.utils import get_public_key, get_private_key, is_valid_signature, get_current_user
+from src.utils import RSA, get_current_user  # get_public_key, get_private_key, is_valid_signature
 
 router = APIRouter(tags=['Authentication'], prefix='/auth')
 
 
 @router.get("/login", response_model=PublicKeySchema, response_description="Get a server public key")
-async def get_public_key(server_public_key: rsa.PublicKey = Depends(get_public_key)):
+async def get_public_key(server_public_key: rsa.PublicKey = Depends(RSA.get_public_key)):
     public_key = server_public_key.save_pkcs1(format="DER")
     data = {"public_key": base64.b64encode(public_key).decode(),
-            "signature": base64.b64encode(rsa.sign(public_key, get_private_key(), HASH_TYPE)).decode()}
+            "signature": base64.b64encode(rsa.sign(public_key, RSA.get_private_key(), HASH_TYPE)).decode()}
     return JSONResponse(status_code=status.HTTP_200_OK,
-                        content={"status": "error", "data": data, "details": ""})
+                        content={"status": "success", "data": data, "details": ""})
 
 
 @router.post("/login", response_model=TokenResponseSchema,
              response_description="Log into the server",
              responses={422: {"model": ValidationResponseSchema}})
 async def login(encrypted_user: LoginUserSchema,
-                server_private_key: rsa.PrivateKey = Depends(get_private_key),
+                server_private_key: rsa.PrivateKey = Depends(RSA.get_private_key),
                 session: AsyncSession = Depends(get_async_session)):
     message = encrypted_user.copy()
     del message.signature
@@ -48,9 +48,9 @@ async def login(encrypted_user: LoginUserSchema,
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid public key")
 
     try:
-        is_valid = is_valid_signature(message.json().encode(),
-                                      base64.b64decode(encrypted_user.signature.encode()),
-                                      user_public_key)
+        is_valid = RSA.verify_signature(message.json().encode(),
+                                        base64.b64decode(encrypted_user.signature.encode()),
+                                        user_public_key)
     # invalid signature
     except (binascii.Error,):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid signature")
@@ -85,12 +85,14 @@ async def login(encrypted_user: LoginUserSchema,
         "token": base64.b64encode(encrypted_token).decode(),
         "signature": base64.b64encode(rsa.sign(encrypted_token, server_private_key, HASH_TYPE)).decode()
     }
-
+    if not user.has_changed_password:
+        return JSONResponse(status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+                            content={"status": "temporary", "data": data, "details": "password expired"})
     return JSONResponse(status_code=status.HTTP_200_OK,
                         content={"status": "success", "data": data, "details": None})
 
 
-@router.get("/logout", response_model=LogoutResponseModel)
+@router.get("/logout", response_model=LogoutResponseModel, responses={422: {"model": ValidationResponseSchema}})
 async def logout(user: User = Depends(get_current_user),
                  session: AsyncSession = Depends(get_async_session)):
     if user:
@@ -112,7 +114,7 @@ async def create_user(raw_data: CreateUserSchema,
     if user.role_id == Roles.ADMIN.value and user.has_changed_password:
         try:
             user_data = {}
-            server_private_key = get_private_key()
+            server_private_key = RSA.get_private_key()
             user_data["uid"] = rsa.decrypt(base64.b64decode(raw_data.uid), server_private_key).decode()
             user_data["name"] = rsa.decrypt(base64.b64decode(raw_data.name), server_private_key).decode()
             user_data["username"] = rsa.decrypt(base64.b64decode(raw_data.username), server_private_key).decode()
@@ -131,14 +133,14 @@ async def create_user(raw_data: CreateUserSchema,
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid permissions")
 
 
-@router.patch("/change-password", response_model=ResponseSchema)
+@router.patch("/change-password", response_model=ResponseSchema, responses={422: {"model": ValidationResponseSchema}})
 async def change_password(data: ChangePasswordSchema,
                           user: User = Depends(get_current_user),
                           session: AsyncSession = Depends(get_async_session)):
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
     try:
-        user_password = rsa.decrypt(base64.b64decode(data.password), get_private_key()).decode()
+        user_password = rsa.decrypt(base64.b64decode(data.password), RSA.get_private_key()).decode()
         bcrypt_salt = bcrypt.gensalt()
         user.hashed_password = bcrypt.hashpw(user_password.encode(), bcrypt_salt).decode()
         user.hashed_token = ""
