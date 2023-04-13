@@ -7,6 +7,7 @@ from fastapi import Query, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
+from starlette.requests import Request
 
 from src.auth.models import User
 from src.config import PUBLIC_KEY, PRIVATE_KEY, HASH_TYPE, DECRYPTION_CHUNK_SIZE
@@ -76,10 +77,15 @@ class RSA:
             return False
 
 
-async def get_current_user(token: str = Query(...),
+async def parse_body(request: Request):
+    data: bytes = await request.body()
+    return data
+
+
+async def get_current_user(token: bytes = Depends(parse_body),
                            session: AsyncSession = Depends(get_async_session)):
     try:
-        token = rsa.decrypt(base64.urlsafe_b64decode(token), RSA.get_private_key())
+        token = rsa.decrypt(token, RSA.get_private_key())
         query = select(User).filter_by(hashed_token=hashlib.sha256(token).hexdigest())
         result = await session.execute(query)
         user = result.scalars().unique().first()
