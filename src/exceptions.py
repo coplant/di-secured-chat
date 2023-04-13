@@ -1,31 +1,18 @@
 from fastapi import HTTPException
+from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
-from starlette.responses import JSONResponse
+from starlette import status
+from starlette.responses import Response
 
 
 async def http_exception_handler(request, exc):
-    return JSONResponse(
+    return Response(
         status_code=exc.status_code,
-        content={"status": "error", "data": None, "details": exc.detail}
+        content=exc.detail,
+        media_type="application/octet-stream"
     )
 
 
 async def validation_exception_handler(request, exc):
-    errors = []
-    for error in exc.errors():
-        if isinstance(error, ValidationError):
-            errors.append({
-                "loc": error.loc,
-                "msg": error.msg,
-                "type": error.type,
-            })
-        else:
-            errors.append({
-                "loc": error.get("loc", None),
-                "msg": error.get("msg", None),
-                "type": error.get("type", None),
-            })
-    return JSONResponse(
-        status_code=422,
-        content={"status": "error", "data": None, "details": errors},
-    )
+    return Response(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    media_type="application/octet-stream")

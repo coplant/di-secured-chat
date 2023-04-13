@@ -9,7 +9,8 @@ PUBLIC_KEY = BASE_DIR / "keys" / "public.der"
 PRIVATE_KEY = BASE_DIR / "keys" / "private.der"
 
 HASH_TYPE = "SHA-256"
-DEFAULT_CHUNK_SIZE = 1024 * 1024 * 5
+DEFAULT_FILE_CHUNK_SIZE = 1024 * 1024 * 5
+DECRYPTION_CHUNK_SIZE = 128
 
 DB_HOST = os.environ.get("DB_HOST")
 DB_PORT = os.environ.get("DB_PORT")

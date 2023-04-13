@@ -1,5 +1,4 @@
-from datetime import datetime
-from typing import Optional, Union
+from typing import Union
 
 from pydantic import BaseModel, Field
 
@@ -7,33 +6,40 @@ from src.schemas import ResponseSchema
 
 
 class UserSchema(BaseModel):
-    username: str = Field(..., example="base64 encoded username")
-    password: str = Field(..., example="base64 encoded password")
-    uid: str = Field(..., example="base64 encoded uid")
+    username: str
+    password: str
+    uid: str
 
 
 class LoginUserSchema(UserSchema):
-    public_key: str = Field(..., example="base64 encoded uid")
-    signature: str = Field(..., example="base64 encoded signature of whole data")
-
-
-class PublicKeySchema(ResponseSchema):
-    data: dict = Field(..., example={"public_key": "base64 encoded public key",
-                                     "signature": "base64 encoded signature of public key"})
-
-
-class TokenResponseSchema(ResponseSchema):
-    data: dict = Field(..., example={"token": "base64 encoded token",
-                                     "signature": "base64 encoded signature of token"})
-
-
-class LogoutResponseModel(ResponseSchema):
-    details: str = Field(..., example="logged out")
+    public_key: str
 
 
 class CreateUserSchema(UserSchema):
-    name: str = Field(..., example="name")
+    name: str
 
 
 class ChangePasswordSchema(BaseModel):
-    password: str = Field(..., example="password")
+    password: str
+
+
+class PayloadSchema(BaseModel):
+    payload: Union[CreateUserSchema, LoginUserSchema, ChangePasswordSchema, dict]
+
+
+class PayloadTokenSchema(PayloadSchema):
+    token: str
+
+
+class RequestSchema(BaseModel):
+    data: Union[PayloadTokenSchema, PayloadSchema]
+    signature: str
+
+
+class PublicKeySchema(ResponseSchema):
+    data: dict
+
+
+class LogoutResponseSchema(ResponseSchema):
+    details: str = Field(..., example="logged out")
+
