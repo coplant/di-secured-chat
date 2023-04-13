@@ -1,3 +1,5 @@
+from typing import Union
+
 from pydantic import BaseModel, Field
 
 from src.schemas import ResponseSchema
@@ -13,13 +15,21 @@ class LoginUserSchema(UserSchema):
     public_key: str = Field(..., example="base64 encoded uid")
 
 
+class CreateUserSchema(UserSchema):
+    name: str = Field(..., example="name")
+
+
+class PayloadSchema(BaseModel):
+    payload: Union[CreateUserSchema, LoginUserSchema, dict]
+
+
+class PayloadTokenSchema(PayloadSchema):
+    token: str
+
+
 class RequestSchema(BaseModel):
-    data: dict = Field(..., example="nested json data")
-    signature: str = Field(..., example="base64 encoded signature of data")
-
-
-class LoginRequestSchema(RequestSchema):
-    data: LoginUserSchema
+    data: Union[PayloadTokenSchema, PayloadSchema]
+    signature: str
 
 
 class PublicKeySchema(ResponseSchema):
@@ -27,12 +37,11 @@ class PublicKeySchema(ResponseSchema):
                                      "signature": "base64 encoded signature of public key"})
 
 
+################################################
+
+
 class LogoutResponseSchema(ResponseSchema):
     details: str = Field(..., example="logged out")
-
-
-class CreateUserSchema(UserSchema):
-    name: str = Field(..., example="name")
 
 
 class ChangePasswordSchema(BaseModel):

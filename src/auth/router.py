@@ -17,7 +17,7 @@ from starlette.responses import JSONResponse
 from src.auth.utils import Roles
 from src.auth.models import User
 from src.auth.schemas import (PublicKeySchema, LogoutResponseSchema,
-                              ChangePasswordSchema, LoginRequestSchema)
+                              ChangePasswordSchema, RequestSchema)
 from src.config import HASH_TYPE
 from src.database import get_async_session
 from src.schemas import ResponseSchema, ValidationResponseSchema
@@ -36,15 +36,15 @@ async def get_public_key(server_public_key: rsa.PublicKey = Depends(RSA.get_publ
 
 
 @router.post("/login",
-             response_model=LoginRequestSchema,
+             response_model=RequestSchema,
              response_description="Log into the server",
              responses={422: {"model": ""}})
 async def login(encrypted: bytes = Body(..., media_type="application/octet-stream"),
                 server_private_key: rsa.PrivateKey = Depends(RSA.get_private_key),
                 session: AsyncSession = Depends(get_async_session)):
-    decrypted = LoginRequestSchema(**json.loads(RSA.decrypt(encrypted, server_private_key)))
+    decrypted = RequestSchema.parse_obj(json.loads(RSA.decrypt(encrypted, server_private_key)))
     try:
-        user_public_key = rsa.PublicKey.load_pkcs1(base64.b64decode(decrypted.data.public_key), format="DER")
+        user_public_key = rsa.PublicKey.load_pkcs1(base64.b64decode(decrypted.data.payload.public_key), format="DER")
     except error.SubstrateUnderrunError:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
     try:
@@ -69,7 +69,7 @@ async def login(encrypted: bytes = Body(..., media_type="application/octet-strea
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)
 
     # valid signature
-    query = select(User).filter_by(username=decrypted.data.username)
+    query = select(User).filter_by(username=decrypted.data.payload.username)
     result = await session.execute(query)
     user: User = result.scalars().unique().first()
 
@@ -83,8 +83,8 @@ async def login(encrypted: bytes = Body(..., media_type="application/octet-strea
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)
 
     # # invalid credentials
-    if not (bcrypt.checkpw(decrypted.data.password.encode(), user.hashed_password.encode())
-            and user.uid == hashlib.sha256(decrypted.data.uid.encode()).hexdigest()):
+    if not (bcrypt.checkpw(decrypted.data.payload.password.encode(), user.hashed_password.encode())
+            and user.uid == hashlib.sha256(decrypted.data.payload.uid.encode()).hexdigest()):
         data = {
             "status": "error",
             "data": None,
@@ -97,7 +97,7 @@ async def login(encrypted: bytes = Body(..., media_type="application/octet-strea
     token = secrets.token_hex(32)
     user.hashed_token = hashlib.sha256(token.encode()).hexdigest()
     user.logged_at = datetime.utcnow()
-    user.public_key = decrypted.data.public_key
+    user.public_key = decrypted.data.payload.public_key
 
     # check if password still valid
     if datetime.utcnow() - user.changed_at >= timedelta(days=60):
@@ -142,8 +142,8 @@ async def logout(encrypted: tuple[dict, User] = Depends(get_user_by_token),
     return response
 
 
-@router.post("/create-user", response_model=ResponseSchema, responses={422: {"model": ""}})
-async def create_user(encrypted: tuple[dict, User] = Depends(get_user_by_token),
+@router.post("/create-user", responses={422: {"model": ""}})
+async def create_user(encrypted: tuple[RequestSchema, User] = Depends(get_user_by_token),
                       server_private_key: rsa.PrivateKey = Depends(RSA.get_private_key),
                       session: AsyncSession = Depends(get_async_session)):
     decrypted, user = encrypted
@@ -151,8 +151,8 @@ async def create_user(encrypted: tuple[dict, User] = Depends(get_user_by_token),
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
     user_public_key = rsa.PublicKey.load_pkcs1(base64.b64decode(user.public_key), "DER")
     try:
-        is_valid = RSA.verify_signature(json.dumps(decrypted["data"]).encode(),
-                                        base64.b64decode(decrypted["signature"]),
+        is_valid = RSA.verify_signature(decrypted.data.json().encode(),
+                                        base64.b64decode(decrypted.signature),
                                         user_public_key)
     except (binascii.Error,):
         data = {
@@ -166,12 +166,12 @@ async def create_user(encrypted: tuple[dict, User] = Depends(get_user_by_token),
     if user.role_id == Roles.ADMIN.value and user.has_changed_password:
         try:
             user_data = {
-                "uid": decrypted["data"]["uid"],
-                "name": decrypted["data"]["name"],
-                "username": decrypted["data"]["username"]
+                "uid": hashlib.sha256(decrypted.data.payload.uid.encode()).hexdigest(),
+                "name": decrypted.data.payload.name,
+                "username": decrypted.data.payload.username
             }
             bcrypt_salt = bcrypt.gensalt()
-            user_data["hashed_password"] = bcrypt.hashpw(decrypted["data"]["password"].encode(), bcrypt_salt).decode()
+            user_data["hashed_password"] = bcrypt.hashpw(decrypted.data.payload.password.encode(), bcrypt_salt).decode()
             user_data["role_id"] = 0
             user_to_add = User(**user_data)
             session.add(user_to_add)
@@ -204,7 +204,7 @@ async def create_user(encrypted: tuple[dict, User] = Depends(get_user_by_token),
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)
 
 
-@router.patch("/change-password", response_model=ResponseSchema, responses={422: {"model": ValidationResponseSchema}})
+@router.patch("/change-password", responses={422: {"model": ""}})
 async def change_password(data: ChangePasswordSchema,
                           user: User = Depends(get_current_user),
                           session: AsyncSession = Depends(get_async_session)):

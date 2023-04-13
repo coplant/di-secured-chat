@@ -3,15 +3,16 @@ import hashlib
 import json
 
 import rsa
-from fastapi import Query, Depends, HTTPException, Body
+from fastapi import Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 from starlette.requests import Request
 
 from src.auth.models import User
+from src.auth.schemas import RequestSchema
 from src.config import PUBLIC_KEY, PRIVATE_KEY, HASH_TYPE, DECRYPTION_CHUNK_SIZE
-from src.database import get_async_session, async_session_maker
+from src.database import async_session_maker, get_async_session
 
 
 # RSA Keys
@@ -82,22 +83,23 @@ async def parse_body(request: Request):
     return data
 
 
-async def get_current_user(token: bytes):
+async def get_current_user(token: bytes, session):
     try:
         query = select(User).filter_by(hashed_token=hashlib.sha256(token).hexdigest())
-        async with async_session_maker() as session:
-            result = await session.execute(query)
-        user = result.scalars().unique().first()
+        result = await session.execute(query)
+        user = result.scalars().unique().one()
         return user
-    except Exception:
+    except Exception as ex:
+        print(ex)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
 
 
 async def get_user_by_token(encrypted: bytes = Depends(parse_body),
-                            server_private_key: rsa.PrivateKey = Depends(RSA.get_private_key)):
+                            server_private_key: rsa.PrivateKey = Depends(RSA.get_private_key),
+                            session: AsyncSession = Depends(get_async_session)):
     try:
-        decrypted = json.loads(RSA.decrypt(encrypted, server_private_key))
-        user = await get_current_user(decrypted['data']['token'].encode())
+        decrypted = RequestSchema.parse_obj(json.loads(RSA.decrypt(encrypted, server_private_key)))
+        user = await get_current_user(decrypted.data.token.encode(), session)
         return decrypted, user
     except Exception:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
