@@ -27,7 +27,7 @@ class PublicKeySchema(ResponseSchema):
                                      "signature": "base64 encoded signature of public key"})
 
 
-class LogoutResponseModel(ResponseSchema):
+class LogoutResponseSchema(ResponseSchema):
     details: str = Field(..., example="logged out")
 
 

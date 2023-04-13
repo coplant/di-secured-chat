@@ -3,7 +3,7 @@ import hashlib
 import json
 
 import rsa
-from fastapi import Query, Depends, HTTPException
+from fastapi import Query, Depends, HTTPException, Body
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
@@ -11,7 +11,7 @@ from starlette.requests import Request
 
 from src.auth.models import User
 from src.config import PUBLIC_KEY, PRIVATE_KEY, HASH_TYPE, DECRYPTION_CHUNK_SIZE
-from src.database import get_async_session
+from src.database import get_async_session, async_session_maker
 
 
 # RSA Keys
@@ -82,14 +82,23 @@ async def parse_body(request: Request):
     return data
 
 
-async def get_current_user(token: bytes = Depends(parse_body),
-                           session: AsyncSession = Depends(get_async_session)):
+async def get_current_user(token: bytes):
     try:
-        token = rsa.decrypt(token, RSA.get_private_key())
         query = select(User).filter_by(hashed_token=hashlib.sha256(token).hexdigest())
-        result = await session.execute(query)
+        async with async_session_maker() as session:
+            result = await session.execute(query)
         user = result.scalars().unique().first()
         return user
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
+
+
+async def get_user_by_token(encrypted: bytes = Depends(parse_body),
+                            server_private_key: rsa.PrivateKey = Depends(RSA.get_private_key)):
+    try:
+        decrypted = json.loads(RSA.decrypt(encrypted, server_private_key))
+        user = await get_current_user(decrypted['data']['token'].encode())
+        return decrypted, user
     except Exception:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
 

@@ -16,13 +16,12 @@ from starlette.responses import JSONResponse
 
 from src.auth.utils import Roles
 from src.auth.models import User
-from src.auth.schemas import (PublicKeySchema, LogoutResponseModel,
-                              CreateUserSchema, ChangePasswordSchema,
-                              LoginRequestSchema)
+from src.auth.schemas import (PublicKeySchema, LogoutResponseSchema,
+                              ChangePasswordSchema, LoginRequestSchema)
 from src.config import HASH_TYPE
 from src.database import get_async_session
 from src.schemas import ResponseSchema, ValidationResponseSchema
-from src.utils import RSA, get_current_user, prepare_encrypted
+from src.utils import RSA, get_current_user, prepare_encrypted, get_user_by_token
 
 router = APIRouter(tags=['Authentication'], prefix='/auth')
 
@@ -120,10 +119,11 @@ async def login(encrypted: bytes = Body(..., media_type="application/octet-strea
     return response
 
 
-@router.get("/logout", response_model=LogoutResponseModel, responses={422: {"model": ""}})
-async def logout(user: User = Depends(get_current_user),
+@router.get("/logout", response_model=LogoutResponseSchema, responses={422: {"model": ""}})
+async def logout(encrypted: tuple[dict, User] = Depends(get_user_by_token),
                  server_private_key: rsa.PrivateKey = Depends(RSA.get_private_key),
                  session: AsyncSession = Depends(get_async_session)):
+    decrypted, user = encrypted
     if not user:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
 
@@ -142,32 +142,66 @@ async def logout(user: User = Depends(get_current_user),
     return response
 
 
-@router.post("/create-user", response_model=ResponseSchema, responses={422: {"model": ValidationResponseSchema}})
-async def create_user(raw_data: CreateUserSchema,
-                      user: User = Depends(get_current_user),
+@router.post("/create-user", response_model=ResponseSchema, responses={422: {"model": ""}})
+async def create_user(encrypted: tuple[dict, User] = Depends(get_user_by_token),
+                      server_private_key: rsa.PrivateKey = Depends(RSA.get_private_key),
                       session: AsyncSession = Depends(get_async_session)):
+    decrypted, user = encrypted
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
+    user_public_key = rsa.PublicKey.load_pkcs1(base64.b64decode(user.public_key), "DER")
+    try:
+        is_valid = RSA.verify_signature(json.dumps(decrypted["data"]).encode(),
+                                        base64.b64decode(decrypted["signature"]),
+                                        user_public_key)
+    except (binascii.Error,):
+        data = {
+            "status": "error",
+            "data": None,
+            "details": "invalid signature"
+        }
+        encrypted = prepare_encrypted(data, server_private_key, user_public_key)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)
+
     if user.role_id == Roles.ADMIN.value and user.has_changed_password:
         try:
-            user_data = {}
-            server_private_key = RSA.get_private_key()
-            user_data["uid"] = rsa.decrypt(base64.b64decode(raw_data.uid), server_private_key).decode()
-            user_data["name"] = rsa.decrypt(base64.b64decode(raw_data.name), server_private_key).decode()
-            user_data["username"] = rsa.decrypt(base64.b64decode(raw_data.username), server_private_key).decode()
-            user_password = rsa.decrypt(base64.b64decode(raw_data.password), server_private_key).decode()
+            user_data = {
+                "uid": decrypted["data"]["uid"],
+                "name": decrypted["data"]["name"],
+                "username": decrypted["data"]["username"]
+            }
             bcrypt_salt = bcrypt.gensalt()
-            user_data["hashed_password"] = bcrypt.hashpw(user_password.encode(), bcrypt_salt).decode()
+            user_data["hashed_password"] = bcrypt.hashpw(decrypted["data"]["password"].encode(), bcrypt_salt).decode()
             user_data["role_id"] = 0
             user_to_add = User(**user_data)
             session.add(user_to_add)
             await session.commit()
-            return JSONResponse(status_code=status.HTTP_201_CREATED,
-                                content={"status": "success", "data": None, "details": "successfully added"})
+            data = {
+                "status": "success",
+                "data": None,
+                "details": "created successfully"
+            }
+            encrypted = prepare_encrypted(data, server_private_key,
+                                          rsa.PublicKey.load_pkcs1(base64.b64decode(user.public_key), format="DER"))
+            response = Response(status_code=status.HTTP_201_CREATED, content=encrypted,
+                                media_type="application/octet-stream")
+            return response
         except Exception:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid data")
+            data = {
+                "status": "error",
+                "data": None,
+                "details": "invalid data"
+            }
+            encrypted = prepare_encrypted(data, server_private_key, user_public_key)
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)
     else:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid permissions")
+        data = {
+            "status": "error",
+            "data": None,
+            "details": "invalid permissions"
+        }
+        encrypted = prepare_encrypted(data, server_private_key, user_public_key)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)
 
 
 @router.patch("/change-password", response_model=ResponseSchema, responses={422: {"model": ValidationResponseSchema}})
