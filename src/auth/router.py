@@ -123,7 +123,27 @@ async def logout(encrypted: tuple[RequestSchema, User] = Depends(get_user_by_tok
     decrypted, user = encrypted
     if not user:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
-
+    user_public_key = rsa.PublicKey.load_pkcs1(base64.b64decode(user.public_key), "DER")
+    try:
+        is_valid = RSA.verify_signature(decrypted.data.json().encode(),
+                                        base64.b64decode(decrypted.signature),
+                                        user_public_key)
+    except (binascii.Error,):
+        data = {
+            "status": "error",
+            "data": None,
+            "details": "invalid signature"
+        }
+        encrypted = prepare_encrypted(data, server_private_key, user_public_key)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)
+    if not is_valid:
+        data = {
+            "status": "error",
+            "data": None,
+            "details": "invalid signature"
+        }
+        encrypted = prepare_encrypted(data, server_private_key, user_public_key)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)
     data = {
         "status": "success",
         "data": None,
@@ -159,7 +179,14 @@ async def create_user(encrypted: tuple[RequestSchema, User] = Depends(get_user_b
         }
         encrypted = prepare_encrypted(data, server_private_key, user_public_key)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)
-
+    if not is_valid:
+        data = {
+            "status": "error",
+            "data": None,
+            "details": "invalid signature"
+        }
+        encrypted = prepare_encrypted(data, server_private_key, user_public_key)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)
     if user.role_id == Roles.ADMIN.value and user.has_changed_password:
         try:
             user_data = {
@@ -206,7 +233,6 @@ async def change_password(encrypted: tuple[RequestSchema, User] = Depends(get_us
                           server_private_key: rsa.PrivateKey = Depends(RSA.get_private_key),
                           session: AsyncSession = Depends(get_async_session)):
     decrypted, user = encrypted
-
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
     user_public_key = rsa.PublicKey.load_pkcs1(base64.b64decode(user.public_key), "DER")
@@ -222,7 +248,14 @@ async def change_password(encrypted: tuple[RequestSchema, User] = Depends(get_us
         }
         encrypted = prepare_encrypted(data, server_private_key, user_public_key)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)
-
+    if not is_valid:
+        data = {
+            "status": "error",
+            "data": None,
+            "details": "invalid signature"
+        }
+        encrypted = prepare_encrypted(data, server_private_key, user_public_key)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)
     try:
         bcrypt_salt = bcrypt.gensalt()
         user.hashed_password = bcrypt.hashpw(decrypted.data.payload.password.encode(), bcrypt_salt).decode()
