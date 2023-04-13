@@ -35,7 +35,7 @@ async def get_public_key(server_public_key: rsa.PublicKey = Depends(RSA.get_publ
                         content={"status": "success", "data": data, "details": ""})
 
 
-@router.post("/login", response_description="Log into the server", responses={422: {"model": ""}})
+@router.post("/login", responses={422: {"model": ""}})
 async def login(encrypted: bytes = Body(..., media_type="application/octet-stream"),
                 server_private_key: rsa.PrivateKey = Depends(RSA.get_private_key),
                 session: AsyncSession = Depends(get_async_session)):
@@ -145,7 +145,7 @@ async def create_user(encrypted: tuple[RequestSchema, User] = Depends(get_user_b
                       session: AsyncSession = Depends(get_async_session)):
     decrypted, user = encrypted
     if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
     user_public_key = rsa.PublicKey.load_pkcs1(base64.b64decode(user.public_key), "DER")
     try:
         is_valid = RSA.verify_signature(decrypted.data.json().encode(),
@@ -202,21 +202,48 @@ async def create_user(encrypted: tuple[RequestSchema, User] = Depends(get_user_b
 
 
 @router.patch("/change-password", responses={422: {"model": ""}})
-async def change_password(data: ChangePasswordSchema,
-                          user: User = Depends(get_current_user),
+async def change_password(encrypted: tuple[RequestSchema, User] = Depends(get_user_by_token),
+                          server_private_key: rsa.PrivateKey = Depends(RSA.get_private_key),
                           session: AsyncSession = Depends(get_async_session)):
+    decrypted, user = encrypted
+
     if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="unauthorized")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+    user_public_key = rsa.PublicKey.load_pkcs1(base64.b64decode(user.public_key), "DER")
     try:
-        user_password = rsa.decrypt(base64.b64decode(data.password), RSA.get_private_key()).decode()
+        is_valid = RSA.verify_signature(decrypted.data.json().encode(),
+                                        base64.b64decode(decrypted.signature),
+                                        user_public_key)
+    except (binascii.Error,):
+        data = {
+            "status": "error",
+            "data": None,
+            "details": "invalid signature"
+        }
+        encrypted = prepare_encrypted(data, server_private_key, user_public_key)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)
+
+    try:
         bcrypt_salt = bcrypt.gensalt()
-        user.hashed_password = bcrypt.hashpw(user_password.encode(), bcrypt_salt).decode()
+        user.hashed_password = bcrypt.hashpw(decrypted.data.payload.password.encode(), bcrypt_salt).decode()
         user.hashed_token = ""
         user.changed_at = datetime.utcnow()
         user.has_changed_password = True
+        data = {
+            "status": "success",
+            "data": None,
+            "details": "password changed"
+        }
+        encrypted = prepare_encrypted(data, server_private_key, user_public_key)
+        response = Response(status_code=status.HTTP_200_OK, content=encrypted, media_type="application/octet-stream")
         session.add(user)
         await session.commit()
-        return JSONResponse(status_code=status.HTTP_200_OK,
-                            content={"status": "success", "data": None, "details": "password changed"})
+        return response
     except Exception:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid data")
+        data = {
+            "status": "error",
+            "data": None,
+            "details": "invalid data"
+        }
+        encrypted = prepare_encrypted(data, server_private_key, user_public_key)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)

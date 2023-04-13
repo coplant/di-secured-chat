@@ -19,8 +19,12 @@ class CreateUserSchema(UserSchema):
     name: str = Field(..., example="name")
 
 
+class ChangePasswordSchema(BaseModel):
+    password: str = Field(..., example="password")
+
+
 class PayloadSchema(BaseModel):
-    payload: Union[CreateUserSchema, LoginUserSchema, dict]
+    payload: Union[CreateUserSchema, LoginUserSchema, ChangePasswordSchema, dict]
 
 
 class PayloadTokenSchema(PayloadSchema):
@@ -43,6 +47,3 @@ class PublicKeySchema(ResponseSchema):
 class LogoutResponseSchema(ResponseSchema):
     details: str = Field(..., example="logged out")
 
-
-class ChangePasswordSchema(BaseModel):
-    password: str = Field(..., example="password")
