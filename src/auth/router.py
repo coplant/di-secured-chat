@@ -21,7 +21,7 @@ from src.auth.schemas import (PublicKeySchema, LogoutResponseSchema,
 from src.config import HASH_TYPE
 from src.database import get_async_session
 from src.schemas import ResponseSchema, ValidationResponseSchema
-from src.utils import RSA, get_current_user, prepare_encrypted, get_user_by_token
+from src.utils import RSA, get_current_user, prepare_encrypted, get_user_by_token, validate_signature
 
 router = APIRouter(tags=['Authentication'], prefix='/auth')
 
@@ -44,27 +44,7 @@ async def login(encrypted: bytes = Body(..., media_type="application/octet-strea
         user_public_key = rsa.PublicKey.load_pkcs1(base64.b64decode(decrypted.data.payload.public_key), format="DER")
     except error.SubstrateUnderrunError:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
-    try:
-        is_valid = RSA.verify_signature(decrypted.data.json().encode(),
-                                        base64.b64decode(decrypted.signature),
-                                        user_public_key)
-    except (binascii.Error,):
-        data = {
-            "status": "error",
-            "data": None,
-            "details": "invalid signature"
-        }
-        encrypted = prepare_encrypted(data, server_private_key, user_public_key)
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)
-    if not is_valid:
-        data = {
-            "status": "error",
-            "data": None,
-            "details": "invalid signature"
-        }
-        encrypted = prepare_encrypted(data, server_private_key, user_public_key)
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)
-
+    validate_signature(decrypted, server_private_key, user_public_key)
     # valid signature
     query = select(User).filter_by(username=decrypted.data.payload.username)
     result = await session.execute(query)
@@ -124,26 +104,7 @@ async def logout(encrypted: tuple[RequestSchema, User] = Depends(get_user_by_tok
     if not user:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
     user_public_key = rsa.PublicKey.load_pkcs1(base64.b64decode(user.public_key), "DER")
-    try:
-        is_valid = RSA.verify_signature(decrypted.data.json().encode(),
-                                        base64.b64decode(decrypted.signature),
-                                        user_public_key)
-    except (binascii.Error,):
-        data = {
-            "status": "error",
-            "data": None,
-            "details": "invalid signature"
-        }
-        encrypted = prepare_encrypted(data, server_private_key, user_public_key)
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)
-    if not is_valid:
-        data = {
-            "status": "error",
-            "data": None,
-            "details": "invalid signature"
-        }
-        encrypted = prepare_encrypted(data, server_private_key, user_public_key)
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)
+    validate_signature(decrypted, server_private_key, user_public_key)
     data = {
         "status": "success",
         "data": None,
@@ -167,26 +128,7 @@ async def create_user(encrypted: tuple[RequestSchema, User] = Depends(get_user_b
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
     user_public_key = rsa.PublicKey.load_pkcs1(base64.b64decode(user.public_key), "DER")
-    try:
-        is_valid = RSA.verify_signature(decrypted.data.json().encode(),
-                                        base64.b64decode(decrypted.signature),
-                                        user_public_key)
-    except (binascii.Error,):
-        data = {
-            "status": "error",
-            "data": None,
-            "details": "invalid signature"
-        }
-        encrypted = prepare_encrypted(data, server_private_key, user_public_key)
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)
-    if not is_valid:
-        data = {
-            "status": "error",
-            "data": None,
-            "details": "invalid signature"
-        }
-        encrypted = prepare_encrypted(data, server_private_key, user_public_key)
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)
+    validate_signature(decrypted, server_private_key, user_public_key)
     if user.role_id == Roles.ADMIN.value and user.has_changed_password:
         try:
             user_data = {
@@ -236,26 +178,7 @@ async def change_password(encrypted: tuple[RequestSchema, User] = Depends(get_us
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
     user_public_key = rsa.PublicKey.load_pkcs1(base64.b64decode(user.public_key), "DER")
-    try:
-        is_valid = RSA.verify_signature(decrypted.data.json().encode(),
-                                        base64.b64decode(decrypted.signature),
-                                        user_public_key)
-    except (binascii.Error,):
-        data = {
-            "status": "error",
-            "data": None,
-            "details": "invalid signature"
-        }
-        encrypted = prepare_encrypted(data, server_private_key, user_public_key)
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)
-    if not is_valid:
-        data = {
-            "status": "error",
-            "data": None,
-            "details": "invalid signature"
-        }
-        encrypted = prepare_encrypted(data, server_private_key, user_public_key)
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)
+    validate_signature(decrypted, server_private_key, user_public_key)
     try:
         bcrypt_salt = bcrypt.gensalt()
         user.hashed_password = bcrypt.hashpw(decrypted.data.payload.password.encode(), bcrypt_salt).decode()

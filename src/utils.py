@@ -1,4 +1,5 @@
 import base64
+import binascii
 import hashlib
 import json
 
@@ -103,6 +104,29 @@ async def get_user_by_token(encrypted: bytes = Depends(parse_body),
         return decrypted, user
     except Exception:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
+
+
+def validate_signature(decrypted, server_private_key, user_public_key):
+    try:
+        is_valid = RSA.verify_signature(decrypted.data.json().encode(),
+                                        base64.b64decode(decrypted.signature),
+                                        user_public_key)
+    except (binascii.Error,):
+        data = {
+            "status": "error",
+            "data": None,
+            "details": "invalid signature"
+        }
+        encrypted = prepare_encrypted(data, server_private_key, user_public_key)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)
+    if not is_valid:
+        data = {
+            "status": "error",
+            "data": None,
+            "details": "invalid signature"
+        }
+        encrypted = prepare_encrypted(data, server_private_key, user_public_key)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)
 
 
 def prepare_encrypted(data: dict, from_private_key: rsa.PrivateKey, to_public_key: rsa.PublicKey):
