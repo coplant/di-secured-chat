@@ -35,10 +35,7 @@ async def get_public_key(server_public_key: rsa.PublicKey = Depends(RSA.get_publ
                         content={"status": "success", "data": data, "details": ""})
 
 
-@router.post("/login",
-             response_model=RequestSchema,
-             response_description="Log into the server",
-             responses={422: {"model": ""}})
+@router.post("/login", response_description="Log into the server", responses={422: {"model": ""}})
 async def login(encrypted: bytes = Body(..., media_type="application/octet-stream"),
                 server_private_key: rsa.PrivateKey = Depends(RSA.get_private_key),
                 session: AsyncSession = Depends(get_async_session)):
@@ -119,8 +116,8 @@ async def login(encrypted: bytes = Body(..., media_type="application/octet-strea
     return response
 
 
-@router.get("/logout", response_model=LogoutResponseSchema, responses={422: {"model": ""}})
-async def logout(encrypted: tuple[dict, User] = Depends(get_user_by_token),
+@router.post("/logout", response_model=LogoutResponseSchema, responses={422: {"model": ""}})
+async def logout(encrypted: tuple[RequestSchema, User] = Depends(get_user_by_token),
                  server_private_key: rsa.PrivateKey = Depends(RSA.get_private_key),
                  session: AsyncSession = Depends(get_async_session)):
     decrypted, user = encrypted
