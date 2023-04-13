@@ -167,18 +167,26 @@ async def test_register_user(ac: AsyncClient, get_keys, data=None):
     assert bcrypt.checkpw(data["payload"]["password"].encode(), user.hashed_password.encode()) is True
 
 
-async def test_valid_logout(ac: AsyncClient, get_keys):
-    token = await test_login(ac, get_keys)
-    token = get_token_from_client(token, get_keys)
-    response = await ac.get(f"/api/auth/logout?token={token}")
+async def test_valid_logout(ac: AsyncClient, get_keys, data=None):
+    server_private_key, server_public_key, user_private_key, user_public_key = get_keys
+    if data is None:
+        data = {
+            "payload": {},
+            "token": await test_login(ac, get_keys)
+        }
+    signature = base64.b64encode(rsa.sign(json.dumps(data).encode(), user_private_key, HASH_TYPE)).decode()
+    to_send = {"data": data, "signature": signature}
+    to_send = json.dumps(to_send)
+    encrypted_msg = RSA.encrypt(to_send.encode(), server_public_key)
+    response = await ac.post(url="/api/auth/logout",
+                             content=encrypted_msg,
+                             headers={"Content-Type": "application/octet-stream"})
     assert response.status_code == 200
-    assert response.json()['status'] == 'success'
-    assert response.json()['details'] == 'logged out'
-
-
-async def test_invalid_logout(ac: AsyncClient):
-    response = await ac.get("/api/auth/logout?token=abc")
-    assert response.status_code == 403
+    decrypted = json.loads(RSA.decrypt(response.content, user_private_key))
+    is_valid = check_signature(decrypted, server_public_key)
+    assert is_valid is True
+    assert decrypted["data"]["status"] == "success"
+    assert decrypted["data"]["details"] == "logged out"
 
 
 async def test_change_password(ac: AsyncClient, get_keys):
