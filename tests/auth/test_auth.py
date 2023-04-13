@@ -16,6 +16,12 @@ from tests.auth.utils import get_token_from_client
 from tests.conftest import client, async_session_maker
 
 
+def check_signature(raw: dict, public_key: rsa.PublicKey):
+    signature = raw.get("signature")
+    data = raw.get("data")
+    return RSA.verify_signature(json.dumps(data).encode(), base64.b64decode(signature), public_key)
+
+
 def test_get_public_key():
     response: Response = client.get('/api/auth/login')
     with open(PUBLIC_KEY, 'rb') as file:
@@ -58,10 +64,10 @@ async def test_add_roles():
 async def test_add_admin():
     async with async_session_maker() as session:
         admin_data = {
-            'uid': '41119e27d08d48105c425c1e5102f9626a1b25627eb23da5fce27d791efe3f81',
+            'uid': 'f1a082a1ff4c1beae32891b4297cae4120f2ee94a2bf6b3b219ef0ad3549cf83',
             'name': 'Администратор',
             'username': 'admin',
-            'hashed_password': '$2b$12$8UcA8nUE7nBBp8s6GvkGi.J.Jlt3Wi6UvvsrcUb8tm3gXwv9vwKny',
+            'hashed_password': '$2b$12$dUyyyO13yyyoEJBrGWund.ZuT2dOkvBydCRCehEmc5ir1xCJ2Eu9O',
             'has_changed_password': True,
             'logged_at': datetime.utcnow(),
             'created_at': datetime.utcnow(),
@@ -88,41 +94,34 @@ async def test_add_admin():
         assert expected_user.is_active == actual_user.is_active
 
 
-async def test_login(ac: AsyncClient, get_keys, raw_user_data=None):
+async def test_login(ac: AsyncClient, get_keys, data=None):
     server_private_key, server_public_key, user_private_key, user_public_key = get_keys
 
     # то, что вводит клиент
-    if not raw_user_data:
-        raw_user_data = {
+    if not data:
+        data = {
             "username": "admin",
-            "password": "uZqXYrK3Mu_Fg-7w",
-            "uid": "B272CE72-DA23-4D68-AB4F-26ABFD9735CA",
+            "password": "kxAf_f_qGfM5-kTv",
+            "uid": "CCE94688-C176-4D12-8115-A96CEC9B809F",
+            "public_key": base64.b64encode(user_public_key.save_pkcs1(format="DER")).decode(),
         }
-    # то, что отправится после обработки
-    encrypted_user_data = {
-        "username": base64.b64encode(
-            rsa.encrypt(raw_user_data["username"].encode(), server_public_key)).decode(),
-        "password": base64.b64encode(
-            rsa.encrypt(raw_user_data["password"].encode(), server_public_key)).decode(),
-        "uid": base64.b64encode(
-            rsa.encrypt(hashlib.sha256(raw_user_data["uid"].encode()).hexdigest().encode(),
-                        server_public_key)).decode(),
-        "public_key": base64.b64encode(
-            user_public_key.save_pkcs1(format="DER")).decode()
-    }
+    signature = base64.b64encode(rsa.sign(json.dumps(data).encode(), user_private_key, HASH_TYPE)).decode()
+    to_send = {"data": data, "signature": signature}
+    to_send = json.dumps(to_send)
+    encrypted_msg = RSA.encrypt(to_send.encode(), server_public_key)
 
     # собираем словарь — зашифровываем уязвимые данные, передаем при помощи base64
-    encrypted_user_data["signature"] = base64.b64encode(
-        rsa.sign(json.dumps(encrypted_user_data).encode(), user_private_key, HASH_TYPE)).decode()
-    response = await ac.post(url='/api/auth/login', json=encrypted_user_data)
+    response = await ac.post(url='/api/auth/login',
+                             content=encrypted_msg,
+                             headers={"Content-Type": 'application/octet-stream'})
 
-    token = response.json()['data']['token']
-    signature = response.json()['data']['signature']
-
+    decrypted = json.loads(RSA.decrypt(response.content, user_private_key))
+    is_valid = check_signature(decrypted, server_public_key)
     assert response.status_code == 200
-    assert response.json()['status'] == 'success'
-    assert response.json()['data']
-    assert rsa.verify(base64.b64decode(token), base64.b64decode(signature), server_public_key) == HASH_TYPE
+    assert decrypted['data']['data']
+    assert is_valid is True
+    assert decrypted['data']['status'] == 'success'
+    token = decrypted['data']['data']['token']
     return token
 
 
