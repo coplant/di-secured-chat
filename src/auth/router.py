@@ -7,9 +7,11 @@ from datetime import datetime, timedelta
 
 import bcrypt
 import rsa
+from asyncpg.exceptions import UniqueViolationError
 from fastapi import APIRouter, Depends, HTTPException, Body, Response
 from pyasn1 import error
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 from starlette.responses import JSONResponse
@@ -152,7 +154,16 @@ async def create_user(encrypted: tuple[RequestSchema, User] = Depends(get_user_b
             response = Response(status_code=status.HTTP_201_CREATED, content=encrypted,
                                 media_type="application/octet-stream")
             return response
-        except Exception:
+        except IntegrityError as ex:
+            data = {
+                "status": "error",
+                "data": None,
+                "details": "user already exists"
+            }
+            encrypted = prepare_encrypted(data, server_private_key, user_public_key)
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)
+        except Exception as ex:
+            print(ex)
             data = {
                 "status": "error",
                 "data": None,
