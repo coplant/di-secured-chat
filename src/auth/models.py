@@ -24,3 +24,12 @@ class User(Base):
     changed_at: datetime = Column(TIMESTAMP, default=datetime.utcnow)
     role_id: int = Column(Integer, ForeignKey("roles.id"))
     is_active: bool = Column(Boolean, default=True, nullable=True)
+
+
+class Log(Base):
+    __tablename__ = 'logs'
+    id: int = Column(Integer, primary_key=True)
+    timestamp: datetime = Column(TIMESTAMP, default=datetime.utcnow)
+    user_id: int = Column(Integer, ForeignKey("users.id"))
+    details: str = Column(String, nullable=True)
+    action: str = Column(String, nullable=False)
