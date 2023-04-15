@@ -1,5 +1,6 @@
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, Boolean, TIMESTAMP, ForeignKey
+from sqlalchemy.orm import relationship
 from src.database import Base
 
 
@@ -23,6 +24,7 @@ class User(Base):
     created_at: datetime = Column(TIMESTAMP, default=datetime.utcnow)
     changed_at: datetime = Column(TIMESTAMP, default=datetime.utcnow)
     role_id: int = Column(Integer, ForeignKey("roles.id"))
+    users = relationship("Chat", secondary="ChatUser", back_populates="users")
     is_active: bool = Column(Boolean, default=True, nullable=True)
 
 
