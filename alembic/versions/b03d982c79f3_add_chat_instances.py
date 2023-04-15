@@ -1,15 +1,15 @@
 """add chat instances
 
-Revision ID: 8c4d98145850
+Revision ID: b03d982c79f3
 Revises: 81f1fe4f7c06
-Create Date: 2023-04-15 19:47:02.589351
+Create Date: 2023-04-16 15:28:23.951468
 
 """
 from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision = '8c4d98145850'
+revision = 'b03d982c79f3'
 down_revision = '81f1fe4f7c06'
 branch_labels = None
 depends_on = None
@@ -36,7 +36,7 @@ def upgrade() -> None:
                     sa.PrimaryKeyConstraint('id')
                     )
     op.create_table('chatsusers',
-                    sa.Column('id', sa.Integer(), nullable=False),
+                    sa.Column('id', sa.Integer(), sa.Identity(always=False, start=1), nullable=False),
                     sa.Column('chat_id', sa.Integer(), nullable=False),
                     sa.Column('user_id', sa.Integer(), nullable=False),
                     sa.ForeignKeyConstraint(['chat_id'], ['chats.id'], ),
@@ -48,6 +48,8 @@ def upgrade() -> None:
                     sa.Column('timestamp', sa.TIMESTAMP(), nullable=True),
                     sa.Column('body', sa.LargeBinary(), nullable=True),
                     sa.Column('chat_id', sa.Integer(), nullable=True),
+                    sa.Column('author_id', sa.Integer(), nullable=True),
+                    sa.ForeignKeyConstraint(['author_id'], ['users.id'], ),
                     sa.ForeignKeyConstraint(['chat_id'], ['chats.id'], ),
                     sa.PrimaryKeyConstraint('id')
                     )

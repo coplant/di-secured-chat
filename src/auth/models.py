@@ -24,7 +24,8 @@ class User(Base):
     created_at: datetime = Column(TIMESTAMP, default=datetime.utcnow)
     changed_at: datetime = Column(TIMESTAMP, default=datetime.utcnow)
     role_id: int = Column(Integer, ForeignKey("roles.id"))
-    users = relationship("Chat", secondary="ChatUser", back_populates="users")
+    chats = relationship("Chat", secondary="chatsusers", back_populates="users")
+    messages = relationship("Message", back_populates="author")
     is_active: bool = Column(Boolean, default=True, nullable=True)
 
 
