@@ -13,7 +13,7 @@ class User(Base):
     __tablename__ = "users"
     id: int = Column(Integer, primary_key=True)
     uid: str = Column(String, unique=True, nullable=False)
-    name: str = Column(String, unique=True, nullable=False)
+    name: str = Column(String, nullable=False)
     username: str = Column(String, unique=True, nullable=False)
     public_key: str = Column(String, nullable=True)
     hashed_password: str = Column(String(length=1024), nullable=False)
