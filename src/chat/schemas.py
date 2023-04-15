@@ -1,12 +1,11 @@
+from datetime import datetime
 from typing import Union
-
-from pydantic import Field, BaseModel
-
+from pydantic import BaseModel
 from src.schemas import ResponseSchema
 
 
 class GetUserSchema(BaseModel):
-    id: str
+    id: int
     username: str
     name: str
 
