@@ -4,6 +4,7 @@ import rsa
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, Header
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 from starlette import status
 from starlette.responses import Response
 from starlette.websockets import WebSocketDisconnect
@@ -53,9 +54,6 @@ async def get_users(encrypted: tuple[RequestSchema, User] = Depends(get_user_by_
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
 
 
-connection = ConnectionManager()
-
-
 @router.post("/new", responses={422: {"model": ""}})
 async def create_chat(encrypted: tuple[RequestSchema, User] = Depends(get_user_by_token),
                       session: AsyncSession = Depends(get_async_session)):
@@ -103,6 +101,62 @@ async def create_chat(encrypted: tuple[RequestSchema, User] = Depends(get_user_b
         }
         encrypted = prepare_encrypted(data, RSA.get_private_key(), user_public_key)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=encrypted)
+
+
+@router.patch("/{chat_id}", responses={422: {"model": ""}})
+async def update_chat(chat_id: int,
+                      encrypted: tuple[RequestSchema, User] = Depends(get_user_by_token),
+                      session: AsyncSession = Depends(get_async_session)):
+    decrypted, user = encrypted
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+    user_public_key = rsa.PublicKey.load_pkcs1(base64.b64decode(user.public_key), "DER")
+    if not user.has_changed_password:
+        data = {
+            "status": "error",
+            "data": None,
+            "details": "password expired"
+        }
+        encrypted = prepare_encrypted(data, RSA.get_private_key(), user_public_key)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)
+    try:
+        query = select(Chat).filter_by(id=chat_id)
+        result = await session.execute(query)
+        chat: Chat = result.scalars().unique().first()
+        users = decrypted.data.payload.users
+        query = select(User).filter(User.id.in_(users))
+        result = await session.execute(query)
+        new_users = result.scalars().unique().all()
+        name = decrypted.data.payload.name or chat.name
+        chat.name = name
+        chat.users = new_users
+        try:
+            session.add(chat)
+        except Exception:
+            await session.rollback()
+            raise
+        else:
+            await session.commit()
+        data = {
+            "status": "success",
+            "data": {"users": users, "name": name},
+            "details": None
+        }
+        encrypted = prepare_encrypted(data, RSA.get_private_key(), user_public_key)
+        response = Response(status_code=status.HTTP_200_OK,
+                            content=encrypted, media_type="application/octet-stream")
+        return response
+    except Exception as ex:
+        data = {
+            "status": "error",
+            "data": None,
+            "details": "invalid data"
+        }
+        encrypted = prepare_encrypted(data, RSA.get_private_key(), user_public_key)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=encrypted)
+
+
+connection = ConnectionManager()
 
 
 @router.websocket("/")
