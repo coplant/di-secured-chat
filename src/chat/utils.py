@@ -4,9 +4,10 @@ from dataclasses import dataclass
 
 import rsa
 from fastapi import WebSocket, HTTPException, Depends
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy.sql.operators import and_
 from starlette import status
 
 from src.auth.models import User
@@ -71,8 +72,9 @@ class ConnectionManager:
 
     async def receive_messages(self, websocket: WebSocket, user: User, session, ids: list[int]):
         try:
-            # for chat_id in ids:
-            query = select(Message).filter(Message.chat_id.in_(ids))
+            subq = select(Message.chat_id, func.max(Message.id).label('max_id')).group_by(Message.chat_id).filter(
+                Message.chat_id.in_(ids)).subquery()
+            query = select(Message).join(subq, and_(Message.chat_id == subq.c.chat_id, Message.id == subq.c.max_id))
             result = await session.execute(query)
             result = result.scalars().unique().all()
             for message in result:
