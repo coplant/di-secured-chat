@@ -38,17 +38,17 @@ class RequestSchema(BaseModel):
     signature: str
 
 
-class Message(BaseModel):
+class ReceiveMessageSchema(BaseModel):
     id: int
-    username: str
-    # todo: body type
-    # body: bytes
-    timestamp: datetime
+    author_id: int
+    chat_id: int
+    body: str
+    timestamp: str
 
-# class ChatSchema(BaseModel):
-#     id: int
-#     type: int
-#     name: str
-#     users: list[GetUserSchema]
-#     # todo: messages?
-#     # messages: list[Message] = []
+
+class ReceiveChatSchema(BaseModel):
+    id: int
+    type: int
+    name: str
+    users: list[GetUserSchema]
+    # messages: list[Message] = []
