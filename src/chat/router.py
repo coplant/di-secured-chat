@@ -159,16 +159,17 @@ async def update_chat(chat_id: int,
 connection = ConnectionManager()
 
 
-@router.websocket("/")
+@router.websocket("/ws")
 async def websocket_rooms(websocket: WebSocket,
                           session: AsyncSession = Depends(get_async_session),
                           user: User = Depends(get_user_by_token_ws)):
     try:
         await connection.connect(websocket, user, session)
+        ids = await connection.receive_chats(websocket, user, session)
+        await connection.receive_messages(websocket, user, session, ids)
         while True:
             data = await websocket.receive_bytes()
             print("Received: ", data)
-            # Send the message to all the clients
             await connection.broadcast(data)
 
     except WebSocketDisconnect:
@@ -176,11 +177,4 @@ async def websocket_rooms(websocket: WebSocket,
     except Exception as err:
         # todo: переписать исключение
         await websocket.send_bytes(str(err).encode())
-        await websocket.close()
-
-# @router.websocket("/{chat_id}")
-# async def websocket_chat(websocket: WebSocket, chat_id: int):
-#     await websocket.accept()
-#     for i in range(10):
-#         await websocket.send_text(str(chat_id))
-#     await websocket.close()
+        await websocket.close(code=status.WS_1006_ABNORMAL_CLOSURE)

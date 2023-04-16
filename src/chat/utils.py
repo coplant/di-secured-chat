@@ -6,12 +6,13 @@ import rsa
 from fastapi import WebSocket, HTTPException, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload, selectinload
 from starlette import status
 
 from src.auth.models import User
 from src.auth.schemas import RequestSchema
-from src.chat.models import Chat
-from src.chat.schemas import ChatSchema, GetUserSchema
+from src.chat.models import Chat, ChatUser, Message
+from src.chat.schemas import ChatSchema, GetUserSchema, ReceiveChatSchema, ReceiveMessageSchema
 from src.database import async_session_maker, get_async_session
 from src.utils import RSA, get_current_user, prepare_encrypted
 
@@ -42,43 +43,59 @@ class ConnectionManager:
     def __init__(self) -> None:
         self.active_connections: dict = {}
 
-    # async def authenticate(self, websocket):
-    #     try:
-    #         encrypted: bytes = await websocket.receive_bytes()
-    #         decrypted, user = await get_user_by_token(encrypted)
-    #         self.active_connections[user.id] = websocket
-    #         return user
-    #     except Exception as ex:
-    #         print(ex)
-    #         self.disconnect(websocket)
-    #         websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-
-    async def connect(self, websocket: WebSocket, user: User, session):
-        await websocket.accept()
-        self.active_connections[user.id] = websocket
+    async def receive_chats(self, websocket: WebSocket, user: User, session):
         try:
-            # todo: получить список чатов? каким образом? можно только групповые
-            # todo: возможно убрать вывод
-            query = select(Chat)  # .filter_by(type_id=0)
+            query = select(User).options(selectinload(User.chats).selectinload(Chat.users)).filter_by(id=user.id)
             result = await session.execute(query)
-            result = result.scalars().unique().all()
+            result = result.scalars().unique().one()
+            ids = [item.id for item in result.chats]
             data = {
                 "status": "success",
-                "data": [ChatSchema(id=item.id,
-                                    type=item.type_id,
-                                    name=item.name,
-                                    users=[GetUserSchema(id=u.id, username=u.username, u=user.name) for u in item.users]
-                                    ).dict() for item in result],
+                "data": [ReceiveChatSchema(id=item.id,
+                                           type=item.type_id,
+                                           name=item.name,
+                                           users=[GetUserSchema(id=u.id,
+                                                                username=u.username,
+                                                                name=u.name).dict() for u in item.users]
+                                           ).dict() for item in result.chats],
                 "details": None
             }
             # message = prepare_encrypted(data, RSA.get_private_key(),
             #                             rsa.PublicKey.load_pkcs1(base64.b64decode(user.public_key), "DER"))
             message = json.dumps({"data": data, "signature": "signature"}).encode()
-
             await self.send_message_to(websocket, message)
+            return ids
         except Exception as ex:
             print(ex)
             self.disconnect(websocket)
+
+    async def receive_messages(self, websocket: WebSocket, user: User, session, ids: list[int]):
+        try:
+            # for chat_id in ids:
+            query = select(Message).filter(Message.chat_id.in_(ids))
+            result = await session.execute(query)
+            result = result.scalars().unique().all()
+            for message in result:
+                data = {
+                    "status": "success",
+                    "data": ReceiveMessageSchema(id=message.id,
+                                                 author_id=message.author_id,
+                                                 chat_id=message.chat_id,
+                                                 body=base64.b64encode(message.body).decode(),
+                                                 timestamp=message.timestamp.timestamp()).dict(),
+                    "details": None
+                }
+                message = json.dumps({"data": data, "signature": "signature"}).encode()
+                # message = prepare_encrypted(data, RSA.get_private_key(),
+                #                             rsa.PublicKey.load_pkcs1(base64.b64decode(user.public_key), "DER"))
+                await self.send_message_to(websocket, message)
+        except Exception as ex:
+            print(ex)
+            self.disconnect(websocket)
+
+    async def connect(self, websocket: WebSocket, user: User, session):
+        await websocket.accept()
+        self.active_connections[user.id] = websocket
 
     def disconnect(self, websocket: WebSocket):
         id = self.find_connection_id(websocket)
