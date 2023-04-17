@@ -174,7 +174,8 @@ async def websocket_rooms(websocket: WebSocket,
                           user: User = Depends(get_user_by_token_ws)):
     try:
         await connection.connect(websocket, user)
-        ids = await connection.receive_chats(websocket, user, session)
+        ids, message = await connection.receive_chats(websocket, user, session)
+        await connection.send_message_to(websocket, message)
         await connection.receive_messages(websocket, user, session, ids)
         while True:
             await websocket.receive_bytes()
@@ -193,7 +194,8 @@ async def websocket_rooms(chat_id: int,
                           user: User = Depends(get_user_by_token_ws)):
     try:
         await connection.connect_to_chat(websocket, user, chat_id)
-        if chat_id not in await connection.receive_chats(websocket, user, session):
+        ids, _ = await connection.receive_chats(websocket, user, session)
+        if chat_id not in ids:
             raise WebSocketDisconnect
         await connection.receive_messages_from_chat(websocket, session, chat_id)
         async for message in websocket.iter_bytes():

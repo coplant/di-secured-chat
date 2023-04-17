@@ -53,9 +53,7 @@ class ConnectionManager:
             }
             # message = prepare_encrypted(data, RSA.get_private_key(),
             #                             rsa.PublicKey.load_pkcs1(base64.b64decode(user.public_key), "DER"))
-            message = json.dumps({"data": data, "signature": "signature"}).encode()
-            await self.send_message_to(websocket, message)
-            return ids
+            return ids, json.dumps({"data": data, "signature": "signature"}).encode()
         except Exception as ex:
             print(ex)
             self.disconnect(websocket)
