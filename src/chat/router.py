@@ -1,3 +1,4 @@
+import asyncio
 import base64
 
 import rsa
@@ -130,6 +131,8 @@ async def update_chat(chat_id: int,
         name = decrypted.data.payload.name or chat.name
         chat.name = name
         chat.users = new_users
+        # todo: можно менять тип чата в зависимости от кол-ва юзеров
+        # chat.type_id = 1 if len(new_users) > 1 else 0
         try:
             session.add(chat)
         except Exception:
@@ -159,18 +162,51 @@ async def update_chat(chat_id: int,
 connection = ConnectionManager()
 
 
+async def notify_new_message(chat_id: int, message: str):
+    await connection.broadcast(f"New message in chat {chat_id}: {message}".encode())
+    # for ws in connection.active_connections.get("background"):
+    #     await connection.send_message_to(ws.get("ws"), )
+
+
 @router.websocket("/ws")
 async def websocket_rooms(websocket: WebSocket,
                           session: AsyncSession = Depends(get_async_session),
                           user: User = Depends(get_user_by_token_ws)):
     try:
-        await connection.connect(websocket, user, session)
+        await connection.connect(websocket, user)
         ids = await connection.receive_chats(websocket, user, session)
         await connection.receive_messages(websocket, user, session, ids)
         while True:
-            data = await websocket.receive_bytes()
-            print("Received: ", data)
-            await connection.broadcast(data)
+            await websocket.receive_bytes()
+    except WebSocketDisconnect:
+        connection.disconnect(websocket)
+    except Exception as err:
+        # todo: переписать исключение
+        await websocket.send_bytes(str(err).encode())
+        await websocket.close(code=status.WS_1006_ABNORMAL_CLOSURE)
+
+
+@router.websocket("/ws/{chat_id}")
+async def websocket_rooms(chat_id: int,
+                          websocket: WebSocket,
+                          session: AsyncSession = Depends(get_async_session),
+                          user: User = Depends(get_user_by_token_ws)):
+    try:
+        await connection.connect_to_chat(websocket, user, chat_id)
+        if chat_id not in await connection.receive_chats(websocket, user, session):
+            raise WebSocketDisconnect
+        await connection.receive_messages_from_chat(websocket, session, chat_id)
+        async for message in websocket.iter_bytes():
+            await connection.send_message(session, user.id, chat_id, message)
+        # while True:
+        #     data = await websocket.receive_bytes()
+        #     await connection.send_message()
+        #     websocket.iter_bytes()
+        #     print("Received: ", data)
+        #     todo: полученные байты
+        #     а) если группа - отправить на клиенты + сохранить в бд (всё хранится в виде байтов)
+        #     б) если личные - отправить на клиенты (убедиться, что сообщение доставлено)
+        # await connection.broadcast(data)
 
     except WebSocketDisconnect:
         connection.disconnect(websocket)
@@ -178,3 +214,10 @@ async def websocket_rooms(websocket: WebSocket,
         # todo: переписать исключение
         await websocket.send_bytes(str(err).encode())
         await websocket.close(code=status.WS_1006_ABNORMAL_CLOSURE)
+
+
+@router.get("/try")
+async def try_ws():
+    while True:
+        await asyncio.sleep(1)
+        await notify_new_message(7, "hi")
