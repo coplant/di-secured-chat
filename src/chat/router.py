@@ -1,4 +1,3 @@
-import asyncio
 import base64
 
 import rsa
@@ -73,7 +72,7 @@ async def create_chat(encrypted: tuple[RequestSchema, User] = Depends(get_user_b
     try:
         users = decrypted.data.payload.users
         name = decrypted.data.payload.name or "New Chat"
-        chat_type = 1 if len(users) > 2 else 0
+        chat_type = 1 if len(users) > 1 else 0
         chat = Chat(type_id=chat_type, name=name)
         try:
             session.add(chat)
@@ -162,12 +161,6 @@ async def update_chat(chat_id: int,
 connection = ConnectionManager()
 
 
-async def notify_new_message(chat_id: int, message: str):
-    await connection.broadcast(f"New message in chat {chat_id}: {message}".encode())
-    # for ws in connection.active_connections.get("background"):
-    #     await connection.send_message_to(ws.get("ws"), )
-
-
 @router.websocket("/ws")
 async def websocket_rooms(websocket: WebSocket,
                           session: AsyncSession = Depends(get_async_session),
@@ -200,11 +193,6 @@ async def websocket_rooms(chat_id: int,
         await connection.receive_messages_from_chat(websocket, session, chat_id)
         async for message in websocket.iter_bytes():
             await connection.send_message(session, user.id, chat_id, message)
-        # while True:
-        #     data = await websocket.receive_bytes()
-        #     await connection.send_message()
-        #     websocket.iter_bytes()
-        #     print("Received: ", data)
         #     todo: полученные байты
         #     а) если группа - отправить на клиенты + сохранить в бд (всё хранится в виде байтов)
         #     б) если личные - отправить на клиенты (убедиться, что сообщение доставлено)
@@ -216,10 +204,3 @@ async def websocket_rooms(chat_id: int,
         # todo: переписать исключение
         await websocket.send_bytes(str(err).encode())
         await websocket.close(code=status.WS_1006_ABNORMAL_CLOSURE)
-
-
-@router.get("/try")
-async def try_ws():
-    while True:
-        await asyncio.sleep(1)
-        await notify_new_message(7, "hi")
