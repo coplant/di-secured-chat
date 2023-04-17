@@ -1,14 +1,24 @@
+from datetime import datetime
 from typing import Union
 
 from pydantic import Field, BaseModel
 
+from src.auth.models import User
 from src.schemas import ResponseSchema
 
 
-class GetUserSchema(BaseModel):
-    id: str
+class UserIDSchema(BaseModel):
+    id: int
+
+
+class GetUserSchema(UserIDSchema):
     username: str
     name: str
+
+
+class ChatSchema(BaseModel):
+    users: list[int]
+    name: Union[str, None]
 
 
 class GetUsersSchema(ResponseSchema):
@@ -16,7 +26,7 @@ class GetUsersSchema(ResponseSchema):
 
 
 class PayloadSchema(BaseModel):
-    payload: Union[dict]
+    payload: Union[ChatSchema, dict]
 
 
 class PayloadTokenSchema(PayloadSchema):
@@ -26,3 +36,19 @@ class PayloadTokenSchema(PayloadSchema):
 class RequestSchema(BaseModel):
     data: Union[PayloadTokenSchema, PayloadSchema]
     signature: str
+
+
+class ReceiveMessageSchema(BaseModel):
+    id: int
+    author_id: int
+    chat_id: int
+    body: str
+    timestamp: str
+
+
+class ReceiveChatSchema(BaseModel):
+    id: int
+    type: int
+    name: str
+    users: list[GetUserSchema]
+    # messages: list[Message] = []

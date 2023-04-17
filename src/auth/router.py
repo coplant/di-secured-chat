@@ -7,15 +7,17 @@ from datetime import datetime, timedelta
 
 import bcrypt
 import rsa
+from asyncpg.exceptions import UniqueViolationError
 from fastapi import APIRouter, Depends, HTTPException, Body, Response
 from pyasn1 import error
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 from starlette.responses import JSONResponse
 
 from src.auth.utils import Roles
-from src.auth.models import User
+from src.auth.models import User, Log
 from src.auth.schemas import (PublicKeySchema, LogoutResponseSchema,
                               ChangePasswordSchema, RequestSchema)
 from src.config import HASH_TYPE
@@ -50,6 +52,13 @@ async def login(encrypted: bytes = Body(..., media_type="application/octet-strea
     result = await session.execute(query)
     user: User = result.scalars().unique().first()
 
+    log = {
+        "user_id": user.id if user else None,
+        "details": f"Username: {decrypted.data.payload.username}",
+        "action": f"Login attempt"
+    }
+    session.add(Log(**log))
+    await session.commit()
     if not user:
         data = {
             "status": "error",
@@ -79,7 +88,11 @@ async def login(encrypted: bytes = Body(..., media_type="application/octet-strea
     # check if password still valid
     if datetime.utcnow() - user.changed_at >= timedelta(days=60):
         user.has_changed_password = False
-
+    log = {
+        "user_id": user.id,
+        "action": "Log in"
+    }
+    session.add(Log(**log))
     session.add(user)
     await session.commit()
     status_code = status.HTTP_307_TEMPORARY_REDIRECT if not user.has_changed_password else status.HTTP_200_OK
@@ -115,6 +128,11 @@ async def logout(encrypted: tuple[RequestSchema, User] = Depends(get_user_by_tok
                                   rsa.PublicKey.load_pkcs1(base64.b64decode(user.public_key), format="DER"))
     response = Response(status_code=status.HTTP_200_OK, content=encrypted, media_type="application/octet-stream")
     user.hashed_token = ""
+    log = {
+        "user_id": user.id,
+        "action": "Log out"
+    }
+    session.add(Log(**log))
     session.add(user)
     await session.commit()
     return response
@@ -142,6 +160,13 @@ async def create_user(encrypted: tuple[RequestSchema, User] = Depends(get_user_b
             user_to_add = User(**user_data)
             session.add(user_to_add)
             await session.commit()
+            log = {
+                "user_id": user.id,
+                "details": "New user: {user_to_add.id}",
+                "action": "Create user"
+            }
+            session.add(Log(**log))
+            await session.commit()
             data = {
                 "status": "success",
                 "data": None,
@@ -152,7 +177,16 @@ async def create_user(encrypted: tuple[RequestSchema, User] = Depends(get_user_b
             response = Response(status_code=status.HTTP_201_CREATED, content=encrypted,
                                 media_type="application/octet-stream")
             return response
-        except Exception:
+        except IntegrityError as ex:
+            data = {
+                "status": "error",
+                "data": None,
+                "details": "user already exists"
+            }
+            encrypted = prepare_encrypted(data, server_private_key, user_public_key)
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)
+        except Exception as ex:
+            print(ex)
             data = {
                 "status": "error",
                 "data": None,
@@ -192,6 +226,11 @@ async def change_password(encrypted: tuple[RequestSchema, User] = Depends(get_us
         }
         encrypted = prepare_encrypted(data, server_private_key, user_public_key)
         response = Response(status_code=status.HTTP_200_OK, content=encrypted, media_type="application/octet-stream")
+        log = {
+            "user_id": user.id,
+            "action": "Change password",
+        }
+        session.add(Log(**log))
         session.add(user)
         await session.commit()
         return response

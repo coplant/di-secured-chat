@@ -5,6 +5,15 @@ from pydantic import BaseModel, Field
 from src.schemas import ResponseSchema
 
 
+# class UserIDSchema(BaseModel):
+#     id: int
+
+
+class ChatSchema(BaseModel):
+    users: list[int]
+    name: Union[str, None]
+
+
 class UserSchema(BaseModel):
     username: str
     password: str
@@ -24,7 +33,7 @@ class ChangePasswordSchema(BaseModel):
 
 
 class PayloadSchema(BaseModel):
-    payload: Union[CreateUserSchema, LoginUserSchema, ChangePasswordSchema, dict]
+    payload: Union[CreateUserSchema, LoginUserSchema, ChangePasswordSchema, ChatSchema, dict]
 
 
 class PayloadTokenSchema(PayloadSchema):
