@@ -25,7 +25,7 @@ class Chat(Base):
     id: int = Column(Integer, primary_key=True)
     type_id: int = Column(Integer, ForeignKey("types.id"))
     name: str = Column(String, nullable=False)
-    users = relationship("User", secondary="chatsusers", lazy="selectin", back_populates="chats")
+    users = relationship("User", secondary="chatsusers", lazy="joined", back_populates="chats")
 
 
 class Message(Base):

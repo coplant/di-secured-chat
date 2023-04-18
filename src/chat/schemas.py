@@ -39,11 +39,11 @@ class RequestSchema(BaseModel):
 
 
 class ReceiveMessageSchema(BaseModel):
-    id: int
+    id: Union[int, None]
     author_id: int
     chat_id: int
     body: str
-    timestamp: str
+    timestamp: datetime
 
 
 class ReceiveChatSchema(BaseModel):

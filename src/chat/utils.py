@@ -1,4 +1,5 @@
 import base64
+import datetime
 import json
 from dataclasses import dataclass
 
@@ -33,7 +34,6 @@ class ConnectionManager:
         self.active_connections: dict = {}
         self.active_chats: dict = {}
 
-    # todo: при вызове эндпоинта типа /ws/7 выводит сообщение (добавить тогл или переписать)
     async def receive_chats(self, websocket: WebSocket, user: User, session):
         try:
             query = select(User).options(selectinload(User.chats).selectinload(Chat.users)).filter_by(id=user.id)
@@ -92,8 +92,7 @@ class ConnectionManager:
             for message in result:
                 data = {
                     "status": "success",
-                    "data": ReceiveMessageSchema(id=message.id,
-                                                 author_id=message.author_id,
+                    "data": ReceiveMessageSchema(author_id=message.author_id,
                                                  chat_id=message.chat_id,
                                                  body=base64.b64encode(message.body).decode(),
                                                  timestamp=message.timestamp.timestamp()).dict(),
@@ -134,7 +133,9 @@ class ConnectionManager:
         return self.active_connections.get(chat_id)
 
     def find_all_chat_users(self, users: list[int]) -> list[WebSocket]:
-        return [ws.get("ws") for ws in self.active_connections.get("background") if ws.get("user") in users]
+        if self.active_connections.get("background"):
+            return [ws.get("ws") for ws in self.active_connections.get("background") if ws.get("user") in users]
+        return []
 
     async def send_message(self, session, author_id: int, chat_id: int, body: bytes):
         query = select(Chat).options(joinedload(Chat.users)).filter_by(id=chat_id)
@@ -150,9 +151,10 @@ class ConnectionManager:
         message = {
             "status": "success",
             "data": {
+                "author_id": author_id,
                 "chat_id": chat_id,
                 "body": base64.b64encode(body).decode(),
-                "author_id": author_id
+                "timestamp": datetime.datetime.utcnow().timestamp()
             },
             "details": None
         }
