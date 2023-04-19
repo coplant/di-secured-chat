@@ -43,7 +43,7 @@ class ReceiveMessageSchema(BaseModel):
     author_id: int
     chat_id: int
     body: str
-    timestamp: datetime
+    timestamp: str
 
 
 class ReceiveChatSchema(BaseModel):
@@ -51,4 +51,6 @@ class ReceiveChatSchema(BaseModel):
     type: int
     name: str
     users: list[GetUserSchema]
+    p: str
+    g: str
     # messages: list[Message] = []

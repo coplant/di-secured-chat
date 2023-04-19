@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 
 import rsa
-from fastapi import WebSocket, HTTPException, Depends
+from fastapi import WebSocket, Depends
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
@@ -12,8 +12,7 @@ from sqlalchemy.sql.operators import and_
 from starlette import status
 
 from src.auth.models import User
-from src.auth.schemas import RequestSchema
-from src.chat.models import Chat, ChatUser, Message
+from src.chat.models import Chat, ChatUser, Message, ChatPrime
 from src.chat.schemas import ChatSchema, GetUserSchema, ReceiveChatSchema, ReceiveMessageSchema
 from src.database import async_session_maker, get_async_session
 from src.utils import RSA, get_current_user, prepare_encrypted
@@ -36,10 +35,11 @@ class ConnectionManager:
 
     async def receive_chats(self, websocket: WebSocket, user: User, session):
         try:
-            query = select(User).options(selectinload(User.chats).selectinload(Chat.users)).filter_by(id=user.id)
+            query = select(Chat).join(ChatUser).join(User).options(
+                selectinload(Chat.users).selectinload(User.chats)).filter(User.id == user.id)
             result = await session.execute(query)
-            result = result.scalars().unique().one()
-            ids = [item.id for item in result.chats]
+            result = result.scalars().unique().all()
+            ids = [item.id for item in result]
             data = {
                 "status": "success",
                 "data": [ReceiveChatSchema(id=item.id,
@@ -47,8 +47,9 @@ class ConnectionManager:
                                            name=item.name,
                                            users=[GetUserSchema(id=u.id,
                                                                 username=u.username,
-                                                                name=u.name).dict() for u in item.users]
-                                           ).dict() for item in result.chats],
+                                                                name=u.name).dict() for u in item.users],
+                                           p=item.primes.p,
+                                           g=item.primes.g).dict() for item in result],
                 "details": None
             }
             # message = prepare_encrypted(data, RSA.get_private_key(),
@@ -113,8 +114,6 @@ class ConnectionManager:
     async def connect_to_chat(self, websocket: WebSocket, user: User, chat_id: int):
         await websocket.accept()
         self.active_connections.setdefault(chat_id, []).append({"ws": websocket, "user": user.id})
-
-        # self.active_chats.setdefault(chat_id, []).append({"ws": websocket, "user": user.id})
 
     def disconnect(self, websocket: WebSocket):
         key, value = self.find_connection_id(websocket)
