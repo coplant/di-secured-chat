@@ -48,8 +48,9 @@ class ConnectionManager:
                                            users=[GetUserSchema(id=u.id,
                                                                 username=u.username,
                                                                 name=u.name).dict() for u in item.users],
-                                           p=item.primes.p,
-                                           g=item.primes.g).dict() for item in result],
+                                           # p=item.primes.p,  # todo: можно раскомментировать это
+                                           # g=item.primes.g
+                                           ).dict() for item in result],
                 "details": None
             }
             # message = prepare_encrypted(data, RSA.get_private_key(),
@@ -111,8 +112,19 @@ class ConnectionManager:
         await websocket.accept()
         self.active_connections.setdefault("background", []).append({"ws": websocket, "user": user.id})
 
-    async def connect_to_chat(self, websocket: WebSocket, user: User, chat_id: int):
+    async def connect_to_chat(self, websocket: WebSocket, session, user: User, chat_id: int):
         await websocket.accept()
+        query = select(ChatPrime).filter_by(chat_id=chat_id)
+        result = await session.execute(query)
+        result = result.scalars().unique().first()
+        message = {
+            "status": "success",
+            "data": {"chat_id": chat_id, "p": result.p, "g": result.g},
+            "details": None
+        }
+        encrypted = json.dumps(message).encode()
+        # encrypted = prepare_encrypted(data, RSA.get_private_key(), user_public_key)
+        await self.send_message_to(websocket, encrypted)
         self.active_connections.setdefault(chat_id, []).append({"ws": websocket, "user": user.id})
 
     def disconnect(self, websocket: WebSocket):

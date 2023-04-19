@@ -24,7 +24,7 @@ class ChatType(Base):
 class ChatPrime(Base):
     __tablename__ = "chatprime"
     id: int = Column(Integer, primary_key=True)
-    chat_id: int = Column(Integer, ForeignKey("chats.id"))
+    chat_id: int = Column(Integer, ForeignKey("chats.id"), unique=True)
     p: str = Column(String)
     g: str = Column(String)
     chat = relationship("Chat", back_populates="primes")

@@ -51,6 +51,5 @@ class ReceiveChatSchema(BaseModel):
     type: int
     name: str
     users: list[GetUserSchema]
-    p: str
-    g: str
-    # messages: list[Message] = []
+    # p: str
+    # g: str

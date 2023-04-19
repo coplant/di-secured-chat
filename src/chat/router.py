@@ -212,7 +212,7 @@ async def websocket_rooms(chat_id: int,
                           session: AsyncSession = Depends(get_async_session),
                           user: User = Depends(get_user_by_token_ws)):
     try:
-        await connection.connect_to_chat(websocket, user, chat_id)
+        await connection.connect_to_chat(websocket, session, user, chat_id)
         ids, _ = await connection.receive_chats(websocket, user, session)
         if chat_id not in ids:
             raise WebSocketDisconnect
@@ -221,9 +221,7 @@ async def websocket_rooms(chat_id: int,
             await connection.send_message(session, user.id, chat_id, message)
         #     todo: полученные байты
         #     а) если группа - отправить на клиенты + сохранить в бд (всё хранится в виде байтов)
-        #     б) если личные - отправить на клиенты (убедиться, что сообщение доставлено)
-        # await connection.broadcast(data)
-
+        #     б) если личные - отправить на клиенты (убедиться, что сообщение доставлено
     except WebSocketDisconnect:
         connection.disconnect(websocket)
     except Exception as err:
