@@ -25,8 +25,13 @@ class GetUsersSchema(ResponseSchema):
     data: list[GetUserSchema]
 
 
+class KeysSchema(BaseModel):
+    chat_id: int
+    public_key: str
+
+
 class PayloadSchema(BaseModel):
-    payload: Union[ChatSchema, dict]
+    payload: Union[KeysSchema, ChatSchema, dict]
 
 
 class PayloadTokenSchema(PayloadSchema):
@@ -39,7 +44,7 @@ class RequestSchema(BaseModel):
 
 
 class ReceiveMessageSchema(BaseModel):
-    id: int
+    id: Union[int, None]
     author_id: int
     chat_id: int
     body: str
@@ -51,4 +56,5 @@ class ReceiveChatSchema(BaseModel):
     type: int
     name: str
     users: list[GetUserSchema]
-    # messages: list[Message] = []
+    # p: str
+    # g: str

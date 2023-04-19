@@ -1,7 +1,8 @@
-import asyncio
 import base64
+import json
 
 import rsa
+import sympy
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, Header
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,8 +12,8 @@ from starlette.responses import Response
 from starlette.websockets import WebSocketDisconnect
 
 from src.auth.models import User
-from src.chat.models import Chat, ChatUser
-from src.chat.schemas import RequestSchema, GetUserSchema
+from src.chat.models import Chat, ChatUser, ChatPrime
+from src.chat.schemas import RequestSchema, GetUserSchema, ReceiveChatSchema
 from src.chat.utils import ConnectionManager, get_user_by_token_ws
 from src.database import get_async_session
 from src.utils import get_user_by_token, prepare_encrypted, RSA, get_current_user
@@ -72,21 +73,44 @@ async def create_chat(encrypted: tuple[RequestSchema, User] = Depends(get_user_b
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)
     try:
         users = decrypted.data.payload.users
-        name = decrypted.data.payload.name or "New Chat"
         chat_type = 1 if len(users) > 1 else 0
+        users.append(user.id)
+        name = decrypted.data.payload.name or "New Chat"
+        p = sympy.randprime(2**1023, 2**1024)
+        g = sympy.randprime(2**1023, 2**1024)
         chat = Chat(type_id=chat_type, name=name)
         try:
             session.add(chat)
             await session.flush()
             session.add_all([ChatUser(chat_id=chat.id, user_id=chat_user) for chat_user in users])
+            session.add(ChatPrime(p=str(p), g=str(g), chat_id=chat.id))
         except Exception:
             await session.rollback()
             raise
         else:
             await session.commit()
+            await session.refresh(chat)
+        active_users = connection.find_all_chat_users(users)
         data = {
             "status": "success",
-            "data": {"chat_id": chat.id},
+            "data": ReceiveChatSchema(id=chat.id,
+                                      type=chat.type_id,
+                                      name=chat.name,
+                                      users=[GetUserSchema(id=u.id,
+                                                           username=u.username,
+                                                           name=u.name).dict() for u in chat.users],
+                                      # p=str(p),
+                                      # g=str(g)
+                                      ).dict(),
+            "details": None
+        }
+        # message = prepare_encrypted(data, RSA.get_private_key(),
+        #                             rsa.PublicKey.load_pkcs1(base64.b64decode(user.public_key), "DER"))
+        for au in active_users:
+            await connection.send_message_to(au, json.dumps({"data": data, "signature": "signature"}).encode())
+        data = {
+            "status": "success",
+            "data": {"chat_id": chat.id, "p": p, "g": g},
             "details": None
         }
         encrypted = prepare_encrypted(data, RSA.get_private_key(), user_public_key)
@@ -162,19 +186,14 @@ async def update_chat(chat_id: int,
 connection = ConnectionManager()
 
 
-async def notify_new_message(chat_id: int, message: str):
-    await connection.broadcast(f"New message in chat {chat_id}: {message}".encode())
-    # for ws in connection.active_connections.get("background"):
-    #     await connection.send_message_to(ws.get("ws"), )
-
-
 @router.websocket("/ws")
 async def websocket_rooms(websocket: WebSocket,
                           session: AsyncSession = Depends(get_async_session),
                           user: User = Depends(get_user_by_token_ws)):
     try:
         await connection.connect(websocket, user)
-        ids = await connection.receive_chats(websocket, user, session)
+        ids, message = await connection.receive_chats(websocket, user, session)
+        await connection.send_message_to(websocket, message)
         await connection.receive_messages(websocket, user, session, ids)
         while True:
             await websocket.receive_bytes()
@@ -192,22 +211,18 @@ async def websocket_rooms(chat_id: int,
                           session: AsyncSession = Depends(get_async_session),
                           user: User = Depends(get_user_by_token_ws)):
     try:
-        await connection.connect_to_chat(websocket, user, chat_id)
-        if chat_id not in await connection.receive_chats(websocket, user, session):
+        await connection.connect_to_chat(websocket, session, user, chat_id)
+        ids, _ = await connection.receive_chats(websocket, user, session)
+        if chat_id not in ids:
             raise WebSocketDisconnect
         await connection.receive_messages_from_chat(websocket, session, chat_id)
+
         async for message in websocket.iter_bytes():
-            await connection.send_message(session, user.id, chat_id, message)
-        # while True:
-        #     data = await websocket.receive_bytes()
-        #     await connection.send_message()
-        #     websocket.iter_bytes()
-        #     print("Received: ", data)
+            # todo: если есть секретный ключ, то отправлять другим методом - сырые байты, без RSA и тп
+            await connection.send_message(websocket, session, user.id, chat_id, message)
         #     todo: полученные байты
         #     а) если группа - отправить на клиенты + сохранить в бд (всё хранится в виде байтов)
-        #     б) если личные - отправить на клиенты (убедиться, что сообщение доставлено)
-        # await connection.broadcast(data)
-
+        #     б) если личные - отправить на клиенты (убедиться, что сообщение доставлено
     except WebSocketDisconnect:
         connection.disconnect(websocket)
     except Exception as err:
@@ -216,8 +231,61 @@ async def websocket_rooms(chat_id: int,
         await websocket.close(code=status.WS_1006_ABNORMAL_CLOSURE)
 
 
-@router.get("/try")
-async def try_ws():
-    while True:
-        await asyncio.sleep(1)
-        await notify_new_message(7, "hi")
+@router.post("/send-keys", responses={422: {"model": ""}})
+async def send_keys(encrypted: tuple[RequestSchema, User] = Depends(get_user_by_token),
+                    session: AsyncSession = Depends(get_async_session)):
+    decrypted, user = encrypted
+    decrypted = RequestSchema.parse_obj(decrypted)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+    user_public_key = rsa.PublicKey.load_pkcs1(base64.b64decode(user.public_key), "DER")
+    if not user.has_changed_password:
+        data = {
+            "status": "error",
+            "data": None,
+            "details": "password expired"
+        }
+        encrypted = prepare_encrypted(data, RSA.get_private_key(), user_public_key)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=encrypted)
+    try:
+        query = select(ChatUser).filter_by(chat_id=decrypted.data.payload.chat_id).filter_by(user_id=user.id)
+        result = await session.execute(query)
+        result = result.scalars().first()
+        try:
+            result.public_key = decrypted.data.payload.public_key
+            session.add(result)
+        except Exception:
+            await session.rollback()
+            raise
+        else:
+            await session.commit()
+            await session.refresh(result)
+        active_users = connection.find_chat_active_users(decrypted.data.payload.chat_id)
+        data = {
+            "status": "success",
+            "data": {"user_id": user.id, "public_key": decrypted.data.payload.public_key},
+            "details": "new key found"
+        }
+        # message = prepare_encrypted(data, RSA.get_private_key(),
+        #                             rsa.PublicKey.load_pkcs1(base64.b64decode(user.public_key), "DER"))
+        for au in active_users:
+            await connection.send_message_to(au.get("ws"),
+                                             json.dumps({"data": data, "signature": "signature"}).encode())
+        data = {
+            "status": "success",
+            "data": None,
+            "details": "sent successfully"
+        }
+        encrypted = prepare_encrypted(data, RSA.get_private_key(), user_public_key)
+        response = Response(status_code=status.HTTP_200_OK,
+                            content=encrypted, media_type="application/octet-stream")
+        return response
+    except Exception as ex:
+        await session.rollback()
+        data = {
+            "status": "error",
+            "data": None,
+            "details": "invalid data"
+        }
+        encrypted = prepare_encrypted(data, RSA.get_private_key(), user_public_key)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=encrypted)

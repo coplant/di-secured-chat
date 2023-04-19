@@ -58,7 +58,7 @@ def upgrade() -> None:
             'uid': 'f1a082a1ff4c1beae32891b4297cae4120f2ee94a2bf6b3b219ef0ad3549cf83',
             'name': 'Администратор',
             'username': 'admin',
-            'hashed_password': '$2b$12$DXfaoE7b2.8LWd.NGBTrTuRn8MeQZUp2hHWXDm2N.Ov0MsfWXgErm',
+            'hashed_password': '$2b$12$8Wy.5U6/7Obr4Ov4UL.Hgu8vqeOp8JApAgn7bE5x.G17P4DyNP2Gm',
             'has_changed_password': True,
             'logged_at': datetime.utcnow(),
             'created_at': datetime.utcnow(),
