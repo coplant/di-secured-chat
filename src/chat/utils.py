@@ -152,13 +152,24 @@ class ConnectionManager:
         query = select(Chat).options(joinedload(Chat.users)).filter_by(id=chat_id)
         results = await session.execute(query)
         chat = results.scalars().unique().first()
+        query = select(ChatUser).filter_by(chat_id=chat.id).filter_by(user_id=author_id)
+        results = await session.execute(query)
+        user = results.scalars().unique().first()
+        if not user.public_key:
+            message = {
+                "status": "error",
+                "data": None,
+                "details": "update your public key"
+            }
+            encrypted = json.dumps(message).encode()
+            # encrypted = prepare_encrypted(data, RSA.get_private_key(), user_public_key)
+            return await self.send_message_to(websocket, encrypted)
         if chat.type_id == 1:
             message = Message(body=body, author_id=author_id, chat_id=chat_id)
             session.add(message)
             await session.commit()
             session.refresh(message)
         # todo: зашифровать сообщение
-        # todo: поменять формат
         message = {
             "status": "success",
             "data": ReceiveMessageSchema(author_id=author_id,

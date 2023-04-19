@@ -218,6 +218,7 @@ async def websocket_rooms(chat_id: int,
         await connection.receive_messages_from_chat(websocket, session, chat_id)
 
         async for message in websocket.iter_bytes():
+            # todo: если есть секретный ключ, то отправлять другим методом - сырые байты, без RSA и тп
             await connection.send_message(websocket, session, user.id, chat_id, message)
         #     todo: полученные байты
         #     а) если группа - отправить на клиенты + сохранить в бд (всё хранится в виде байтов)
