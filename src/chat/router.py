@@ -2,6 +2,7 @@ import base64
 import json
 
 import rsa
+import sympy
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, Header
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,7 +12,7 @@ from starlette.responses import Response
 from starlette.websockets import WebSocketDisconnect
 
 from src.auth.models import User
-from src.chat.models import Chat, ChatUser
+from src.chat.models import Chat, ChatUser, ChatPrime
 from src.chat.schemas import RequestSchema, GetUserSchema, ReceiveChatSchema
 from src.chat.utils import ConnectionManager, get_user_by_token_ws
 from src.database import get_async_session
@@ -76,18 +77,20 @@ async def create_chat(encrypted: tuple[RequestSchema, User] = Depends(get_user_b
         users.append(user.id)
         name = decrypted.data.payload.name or "New Chat"
         # todo: передавать p и g + открытый ключ создателя чата
+        p = sympy.randprime(2**1023, 2**1024)
+        g = sympy.randprime(2**1023, 2**1024)
         chat = Chat(type_id=chat_type, name=name)
         try:
             session.add(chat)
             await session.flush()
             session.add_all([ChatUser(chat_id=chat.id, user_id=chat_user) for chat_user in users])
+            session.add(ChatPrime(p=str(p), g=str(g), chat_id=chat.id))
         except Exception:
             await session.rollback()
             raise
         else:
             await session.commit()
             await session.refresh(chat)
-
         active_users = connection.find_all_chat_users(users)
         data = {
             "status": "success",
@@ -96,7 +99,9 @@ async def create_chat(encrypted: tuple[RequestSchema, User] = Depends(get_user_b
                                       name=chat.name,
                                       users=[GetUserSchema(id=u.id,
                                                            username=u.username,
-                                                           name=u.name).dict() for u in chat.users]
+                                                           name=u.name).dict() for u in chat.users],
+                                      p=str(p),
+                                      g=str(g)
                                       ).dict(),
             "details": None
         }
@@ -106,7 +111,7 @@ async def create_chat(encrypted: tuple[RequestSchema, User] = Depends(get_user_b
             await connection.send_message_to(au, json.dumps({"data": data, "signature": "signature"}).encode())
         data = {
             "status": "success",
-            "data": {"chat_id": chat.id},
+            "data": {"chat_id": chat.id, "p": p, "g": g},
             "details": None
         }
         encrypted = prepare_encrypted(data, RSA.get_private_key(), user_public_key)
@@ -189,13 +194,9 @@ async def websocket_rooms(websocket: WebSocket,
     try:
         await connection.connect(websocket, user)
         ids, message = await connection.receive_chats(websocket, user, session)
-        # chat_ids = set(ids)
         await connection.send_message_to(websocket, message)
         await connection.receive_messages(websocket, user, session, ids)
         while True:
-            # ids, message = await connection.receive_chats(websocket, user, session)
-            # if set(ids) != chat_ids:
-            #     await connection.send_message_to(websocket, message)
             await websocket.receive_bytes()
     except WebSocketDisconnect:
         connection.disconnect(websocket)

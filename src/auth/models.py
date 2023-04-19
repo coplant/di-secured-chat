@@ -5,7 +5,7 @@ from src.database import Base
 
 
 class Role(Base):
-    __tablename__ = 'roles'
+    __tablename__ = "roles"
     id: int = Column(Integer, primary_key=True)
     name: str = Column(String, nullable=False)
 
@@ -30,7 +30,7 @@ class User(Base):
 
 
 class Log(Base):
-    __tablename__ = 'logs'
+    __tablename__ = "logs"
     id: int = Column(Integer, primary_key=True)
     timestamp: datetime = Column(TIMESTAMP, default=datetime.utcnow)
     user_id: int = Column(Integer, ForeignKey("users.id"))
