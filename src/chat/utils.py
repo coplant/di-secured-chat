@@ -144,17 +144,15 @@ class ConnectionManager:
             message = Message(body=body, author_id=author_id, chat_id=chat_id)
             session.add(message)
             await session.commit()
-        # session.refresh(message)
+            session.refresh(message)
         # todo: зашифровать сообщение
         # todo: поменять формат
         message = {
             "status": "success",
-            "data": {
-                "author_id": author_id,
-                "chat_id": chat_id,
-                "body": base64.b64encode(body).decode(),
-                "timestamp": datetime.datetime.utcnow().timestamp()
-            },
+            "data": ReceiveMessageSchema(author_id=author_id,
+                                         chat_id=chat_id,
+                                         body=base64.b64encode(body).decode(),
+                                         timestamp=datetime.datetime.utcnow().timestamp()).dict(),
             "details": None
         }
         encrypted = json.dumps(message).encode()
