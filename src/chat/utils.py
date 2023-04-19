@@ -148,7 +148,7 @@ class ConnectionManager:
             return [ws.get("ws") for ws in self.active_connections.get("background") if ws.get("user") in users]
         return []
 
-    async def send_message(self, session, author_id: int, chat_id: int, body: bytes):
+    async def send_message(self, websocket, session, author_id: int, chat_id: int, body: bytes):
         query = select(Chat).options(joinedload(Chat.users)).filter_by(id=chat_id)
         results = await session.execute(query)
         chat = results.scalars().unique().first()
