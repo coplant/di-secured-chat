@@ -94,7 +94,8 @@ class ConnectionManager:
             for message in result:
                 data = {
                     "status": "success",
-                    "data": ReceiveMessageSchema(author_id=message.author_id,
+                    "data": ReceiveMessageSchema(id=message.id if message.id else None,
+                                                 author_id=message.author_id,
                                                  chat_id=message.chat_id,
                                                  body=base64.b64encode(message.body).decode(),
                                                  timestamp=message.timestamp.timestamp()).dict(),

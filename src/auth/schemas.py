@@ -33,7 +33,7 @@ class ChangePasswordSchema(BaseModel):
 
 
 class PayloadSchema(BaseModel):
-    payload: Union[CreateUserSchema, LoginUserSchema, ChangePasswordSchema, ChatSchema, dict]
+    payload: Union[CreateUserSchema, LoginUserSchema, ChangePasswordSchema, ChatSchema, dict, None]
 
 
 class PayloadTokenSchema(PayloadSchema):

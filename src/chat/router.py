@@ -149,6 +149,7 @@ async def update_chat(chat_id: int,
         result = await session.execute(query)
         chat: Chat = result.scalars().unique().first()
         users = decrypted.data.payload.users
+        users.append(user.id)
         query = select(User).filter(User.id.in_(users))
         result = await session.execute(query)
         new_users = result.scalars().unique().all()
