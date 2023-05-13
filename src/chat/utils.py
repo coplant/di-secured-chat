@@ -19,12 +19,16 @@ from src.utils import RSA, get_current_user, prepare_encrypted
 
 
 async def get_user_by_token_ws(websocket: WebSocket, session: AsyncSession = Depends(get_async_session)):
-    token = websocket.headers.get("Authorization")
-    if token is None:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-    else:
-        token = RSA.decrypt(base64.b64decode(token), RSA.get_private_key())
-        return await get_current_user(token, session)
+    try:
+        token = websocket.headers.get("Authorization")
+        if token is None:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        else:
+            token = RSA.decrypt(base64.b64decode(token), RSA.get_private_key())
+            return await get_current_user(token, session, websocket)
+    except Exception as err:
+        print(err)
+        await websocket.close(code=status.WS_1006_ABNORMAL_CLOSURE)
 
 
 @dataclass
