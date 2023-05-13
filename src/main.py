@@ -8,10 +8,10 @@ from pydantic import ValidationError
 
 sys.path.append("..")
 
-from auth.router import router as auth_router
-from chat.router import router as chat_router
-from exceptions import http_exception_handler, validation_exception_handler
-from utils import RSA
+from src.auth.router import router as auth_router
+from src.chat.router import router as chat_router
+from src.exceptions import http_exception_handler, validation_exception_handler
+from src.utils import RSA
 
 # keys setup
 public_key, private_key = RSA.get_keys()

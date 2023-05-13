@@ -101,7 +101,7 @@ async def login(encrypted: bytes = Body(..., media_type="application/octet-strea
 
     data = {
         "status": status_info,
-        "data": {"token": token},
+        "data": {"token": token, "user_id": user.id},
         "details": details
     }
     encrypted = prepare_encrypted(data, server_private_key, user_public_key)

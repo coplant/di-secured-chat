@@ -98,9 +98,7 @@ async def create_chat(encrypted: tuple[RequestSchema, User] = Depends(get_user_b
                                       name=chat.name,
                                       users=[GetUserSchema(id=u.id,
                                                            username=u.username,
-                                                           name=u.name).dict() for u in chat.users],
-                                      # p=str(p),
-                                      # g=str(g)
+                                                           name=u.name).dict() for u in chat.users]
                                       ).dict(),
             "details": None
         }
