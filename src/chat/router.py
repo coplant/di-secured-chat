@@ -26,7 +26,7 @@ async def get_users(encrypted: tuple[RequestSchema, User] = Depends(get_user_by_
                     server_private_key: rsa.PrivateKey = Depends(RSA.get_private_key),
                     session: AsyncSession = Depends(get_async_session)):
     decrypted, user = encrypted
-    if not user:
+    if not user or not user.public_key:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
     user_public_key = rsa.PublicKey.load_pkcs1(base64.b64decode(user.public_key), "DER")
     if not user.has_changed_password:
@@ -60,7 +60,7 @@ async def get_users(encrypted: tuple[RequestSchema, User] = Depends(get_user_by_
 async def create_chat(encrypted: tuple[RequestSchema, User] = Depends(get_user_by_token),
                       session: AsyncSession = Depends(get_async_session)):
     decrypted, user = encrypted
-    if not user:
+    if not user or not user.public_key:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
     user_public_key = rsa.PublicKey.load_pkcs1(base64.b64decode(user.public_key), "DER")
     if not user.has_changed_password:
@@ -131,7 +131,7 @@ async def update_chat(chat_id: int,
                       encrypted: tuple[RequestSchema, User] = Depends(get_user_by_token),
                       session: AsyncSession = Depends(get_async_session)):
     decrypted, user = encrypted
-    if not user:
+    if not user or not user.public_key:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
     user_public_key = rsa.PublicKey.load_pkcs1(base64.b64decode(user.public_key), "DER")
     if not user.has_changed_password:
@@ -235,7 +235,7 @@ async def send_keys(encrypted: tuple[RequestSchema, User] = Depends(get_user_by_
                     session: AsyncSession = Depends(get_async_session)):
     decrypted, user = encrypted
     decrypted = RequestSchema.parse_obj(decrypted)
-    if not user:
+    if not user or not user.public_key:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
     user_public_key = rsa.PublicKey.load_pkcs1(base64.b64decode(user.public_key), "DER")
     if not user.has_changed_password:

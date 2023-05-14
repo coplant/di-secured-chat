@@ -114,7 +114,7 @@ async def logout(encrypted: tuple[RequestSchema, User] = Depends(get_user_by_tok
                  server_private_key: rsa.PrivateKey = Depends(RSA.get_private_key),
                  session: AsyncSession = Depends(get_async_session)):
     decrypted, user = encrypted
-    if not user:
+    if not user or not user.public_key:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
     user_public_key = rsa.PublicKey.load_pkcs1(base64.b64decode(user.public_key), "DER")
     validate_signature(decrypted, server_private_key, user_public_key)
@@ -143,7 +143,7 @@ async def create_user(encrypted: tuple[RequestSchema, User] = Depends(get_user_b
                       server_private_key: rsa.PrivateKey = Depends(RSA.get_private_key),
                       session: AsyncSession = Depends(get_async_session)):
     decrypted, user = encrypted
-    if not user:
+    if not user or not user.public_key:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
     user_public_key = rsa.PublicKey.load_pkcs1(base64.b64decode(user.public_key), "DER")
     validate_signature(decrypted, server_private_key, user_public_key)
@@ -209,7 +209,7 @@ async def change_password(encrypted: tuple[RequestSchema, User] = Depends(get_us
                           server_private_key: rsa.PrivateKey = Depends(RSA.get_private_key),
                           session: AsyncSession = Depends(get_async_session)):
     decrypted, user = encrypted
-    if not user:
+    if not user or not user.public_key:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
     user_public_key = rsa.PublicKey.load_pkcs1(base64.b64decode(user.public_key), "DER")
     validate_signature(decrypted, server_private_key, user_public_key)

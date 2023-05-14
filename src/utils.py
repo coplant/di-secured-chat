@@ -85,7 +85,7 @@ async def parse_body(request: Request):
     return data
 
 
-async def get_current_user(token: bytes, session, websocket: WebSocket):
+async def get_current_user(token: bytes, session, websocket: WebSocket = None):
     try:
         query = select(User).filter_by(hashed_token=hashlib.sha256(token).hexdigest())
         result = await session.execute(query)
@@ -93,7 +93,10 @@ async def get_current_user(token: bytes, session, websocket: WebSocket):
         return user
     except Exception as err:
         print(err)
-        await websocket.close(code=status.WS_1006_ABNORMAL_CLOSURE)
+        if websocket:
+            await websocket.close(code=status.WS_1006_ABNORMAL_CLOSURE)
+        else:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
 
 
 async def get_user_by_token(encrypted: bytes = Depends(parse_body),
