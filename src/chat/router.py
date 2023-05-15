@@ -206,7 +206,7 @@ async def websocket_rooms(websocket: WebSocket,
         connection.disconnect(websocket)
     except Exception as err:
         # todo: переписать исключение
-        await websocket.send_bytes(str(err).encode())
+        connection.disconnect(websocket)
         await websocket.close(code=status.WS_1006_ABNORMAL_CLOSURE)
 
 
@@ -221,9 +221,8 @@ async def websocket_rooms(chat_id: int,
         if chat_id not in ids:
             raise WebSocketDisconnect
         await connection.receive_messages_from_chat(websocket, session, chat_id)
-
-        async for message in websocket.iter_bytes():
-            # todo: если есть секретный ключ, то отправлять другим методом - сырые байты, без RSA и тп
+        while True:
+            message = await websocket.receive_bytes()
             await connection.send_message(websocket, session, user.id, chat_id, message)
         #     todo: полученные байты
         #     а) если группа - отправить на клиенты + сохранить в бд (всё хранится в виде байтов)
@@ -232,6 +231,7 @@ async def websocket_rooms(chat_id: int,
         connection.disconnect(websocket)
     except Exception as err:
         # todo: переписать исключение
+        connection.disconnect(websocket)
         await websocket.close(code=status.WS_1006_ABNORMAL_CLOSURE)
 
 
@@ -290,12 +290,11 @@ async def send_keys(encrypted: tuple[RequestSchema, User] = Depends(get_user_by_
         #                             rsa.PublicKey.load_pkcs1(base64.b64decode(user.public_key), "DER"))
         for au in active_users:
             try:
-                await connection.send_message_to(au.get("ws"),
-                                                 # json.dumps({"data": data, "signature": "signature"}).encode())
-                                                 json.dumps(data).encode())
+                await connection.send_message_to(au.get("ws"), json.dumps(
+                    data).encode())  # json.dumps({"data": data, "signature": "signature"}).encode())
             except Exception as ex:
-                # todo: отключение вебсокетов
-                del connection.active_connections[au]
+                print(ex)
+                pass
 
         data = {
             "status": "success",
