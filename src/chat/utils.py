@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.sql.operators import and_
 from starlette import status
+from starlette.websockets import WebSocketDisconnect
 
 from src.auth.models import User
 from src.chat.models import Chat, ChatUser, Message, ChatPrime
@@ -118,19 +119,34 @@ class ConnectionManager:
         self.active_connections.setdefault("background", []).append({"ws": websocket, "user": user.id})
 
     async def connect_to_chat(self, websocket: WebSocket, session, user: User, chat_id: int):
-        await websocket.accept()
-        query = select(ChatPrime).filter_by(chat_id=chat_id)
-        result = await session.execute(query)
-        result = result.scalars().unique().first()
-        message = {
-            "status": "success",
-            "data": {"chat_id": chat_id, "p": result.p, "g": result.g},
-            "details": None
-        }
-        encrypted = json.dumps(message).encode()
-        # encrypted = prepare_encrypted(data, RSA.get_private_key(), user_public_key)
-        await self.send_message_to(websocket, encrypted)
-        self.active_connections.setdefault(chat_id, []).append({"ws": websocket, "user": user.id})
+        try:
+            await websocket.accept()
+            query = select(ChatPrime).filter_by(chat_id=chat_id)
+            result = await session.execute(query)
+            chat_primes = result.scalars().unique().first()
+
+            query = select(ChatUser).filter_by(chat_id=chat_id)
+            result = await session.execute(query)
+            chat_public = result.scalars().unique().all()
+            user_primes = []
+            for item in chat_public:
+                user_primes.append({
+                    "user_id": item.user_id,
+                    "key": str(item.public_key)
+                })
+
+            message = {
+                "status": "success",
+                "data": {"chat_id": chat_id, "p": str(chat_primes.p), "g": str(chat_primes.g),
+                         "public_keys": user_primes},
+                "details": None
+            }
+            encrypted = json.dumps(message).encode()
+            # encrypted = prepare_encrypted(data, RSA.get_private_key(), user_public_key)
+            await self.send_message_to(websocket, encrypted)
+            self.active_connections.setdefault(chat_id, []).append({"ws": websocket, "user": user.id})
+        except Exception:
+            raise WebSocketDisconnect
 
     def disconnect(self, websocket: WebSocket):
         key, value = self.find_connection_id(websocket)

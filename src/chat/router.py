@@ -76,8 +76,14 @@ async def create_chat(encrypted: tuple[RequestSchema, User] = Depends(get_user_b
         chat_type = 1 if len(users) > 1 else 0
         users.append(user.id)
         name = decrypted.data.payload.name or "New Chat"
-        p = sympy.randprime(2**1023, 2**1024)
-        g = sympy.randprime(2**1023, 2**1024)
+        g = sympy.randprime(int(0x1000000000000000000000000000000000000000000000000000000000000000),
+                            int(0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff))
+        p = 2 * g + 1
+        while not sympy.isprime(p):
+            g = sympy.randprime(int(0x1000000000000000000000000000000000000000000000000000000000000000),
+                                int(0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff))
+            p = 2 * g + 1
+
         chat = Chat(type_id=chat_type, name=name)
         try:
             session.add(chat)
@@ -108,7 +114,7 @@ async def create_chat(encrypted: tuple[RequestSchema, User] = Depends(get_user_b
             await connection.send_message_to(au, json.dumps({"data": data, "signature": "signature"}).encode())
         data = {
             "status": "success",
-            "data": {"chat_id": chat.id, "p": p, "g": g},
+            "data": {"chat_id": chat.id, "p": str(p), "g": str(g)},
             "details": None
         }
         encrypted = prepare_encrypted(data, RSA.get_private_key(), user_public_key)
@@ -226,7 +232,6 @@ async def websocket_rooms(chat_id: int,
         connection.disconnect(websocket)
     except Exception as err:
         # todo: переписать исключение
-        await websocket.send_bytes(str(err).encode())
         await websocket.close(code=status.WS_1006_ABNORMAL_CLOSURE)
 
 
