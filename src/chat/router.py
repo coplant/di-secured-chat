@@ -265,16 +265,38 @@ async def send_keys(encrypted: tuple[RequestSchema, User] = Depends(get_user_by_
             await session.commit()
             await session.refresh(result)
         active_users = connection.find_chat_active_users(decrypted.data.payload.chat_id)
+
+        query = select(ChatPrime).filter_by(chat_id=decrypted.data.payload.chat_id)
+        result = await session.execute(query)
+        chat_primes = result.scalars().unique().first()
+
+        query = select(ChatUser).filter_by(chat_id=decrypted.data.payload.chat_id)
+        result = await session.execute(query)
+        chat_public = result.scalars().unique().all()
+        user_primes = []
+        for item in chat_public:
+            user_primes.append({
+                "user_id": item.user_id,
+                "key": str(item.public_key)
+            })
+
         data = {
             "status": "success",
-            "data": {"user_id": user.id, "public_key": decrypted.data.payload.public_key},
-            "details": "new key found"
+            "data": {"chat_id": decrypted.data.payload.chat_id, "p": str(chat_primes.p), "g": str(chat_primes.g),
+                     "public_keys": user_primes},
+            "details": None
         }
         # message = prepare_encrypted(data, RSA.get_private_key(),
         #                             rsa.PublicKey.load_pkcs1(base64.b64decode(user.public_key), "DER"))
         for au in active_users:
-            await connection.send_message_to(au.get("ws"),
-                                             json.dumps({"data": data, "signature": "signature"}).encode())
+            try:
+                await connection.send_message_to(au.get("ws"),
+                                                 # json.dumps({"data": data, "signature": "signature"}).encode())
+                                                 json.dumps(data).encode())
+            except Exception as ex:
+                # todo: отключение вебсокетов
+                del connection.active_connections[au]
+
         data = {
             "status": "success",
             "data": None,

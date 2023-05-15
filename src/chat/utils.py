@@ -137,16 +137,21 @@ class ConnectionManager:
 
             message = {
                 "status": "success",
-                "data": {"chat_id": chat_id, "p": str(chat_primes.p), "g": str(chat_primes.g),
-                         "public_keys": user_primes},
+                "data": {
+                    "chat_id": chat_id,
+                    "p": str(chat_primes.p),
+                    "g": str(chat_primes.g),
+                    "public_keys": user_primes
+                },
                 "details": None
             }
             encrypted = json.dumps(message).encode()
             # encrypted = prepare_encrypted(data, RSA.get_private_key(), user_public_key)
             await self.send_message_to(websocket, encrypted)
             self.active_connections.setdefault(chat_id, []).append({"ws": websocket, "user": user.id})
-        except Exception:
-            raise WebSocketDisconnect
+        except Exception as ex:
+            print(ex)
+            self.disconnect(websocket)
 
     def disconnect(self, websocket: WebSocket):
         key, value = self.find_connection_id(websocket)
