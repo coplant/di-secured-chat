@@ -111,7 +111,8 @@ async def create_chat(encrypted: tuple[RequestSchema, User] = Depends(get_user_b
         # message = prepare_encrypted(data, RSA.get_private_key(),
         #                             rsa.PublicKey.load_pkcs1(base64.b64decode(user.public_key), "DER"))
         for au in active_users:
-            await connection.send_message_to(au, json.dumps({"data": data, "signature": "signature"}).encode())
+            await connection.send_message_to(au, json.dumps(data).encode())
+            # json.dumps({"data": data, "signature": "signature"}).encode()
         data = {
             "status": "success",
             "data": {"chat_id": chat.id, "p": str(p), "g": str(g)},
