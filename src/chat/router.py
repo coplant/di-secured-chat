@@ -99,20 +99,19 @@ async def create_chat(encrypted: tuple[RequestSchema, User] = Depends(get_user_b
         active_users = connection.find_all_chat_users(users)
         data = {
             "status": "success",
-            "data": ReceiveChatSchema(id=chat.id,
-                                      type=chat.type_id,
-                                      name=chat.name,
-                                      users=[GetUserSchema(id=u.id,
-                                                           username=u.username,
-                                                           name=u.name).dict() for u in chat.users]
-                                      ).dict(),
+            "data": [ReceiveChatSchema(id=chat.id,
+                                       type=chat.type_id,
+                                       name=chat.name,
+                                       users=[GetUserSchema(id=u.id,
+                                                            username=u.username,
+                                                            name=u.name).dict() for u in chat.users]
+                                       ).dict()],
             "details": None
         }
         # message = prepare_encrypted(data, RSA.get_private_key(),
         #                             rsa.PublicKey.load_pkcs1(base64.b64decode(user.public_key), "DER"))
         for au in active_users:
-            await connection.send_message_to(au, json.dumps(data).encode())
-            # json.dumps({"data": data, "signature": "signature"}).encode()
+            await connection.send_message_to(au, json.dumps({"data": data, "signature": "signature"}).encode())
         data = {
             "status": "success",
             "data": {"chat_id": chat.id, "p": str(p), "g": str(g)},
@@ -207,6 +206,7 @@ async def websocket_rooms(websocket: WebSocket,
         connection.disconnect(websocket)
     except Exception as err:
         # todo: переписать исключение
+        print(err)
         connection.disconnect(websocket)
         await websocket.close(code=status.WS_1006_ABNORMAL_CLOSURE)
 
