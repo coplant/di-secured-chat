@@ -201,7 +201,7 @@ class ConnectionManager:
             "data": ReceiveMessageSchema(author_id=author_id,
                                          chat_id=chat_id,
                                          body=base64.b64encode(body).decode(),
-                                         timestamp=datetime.datetime.utcnow().timestamp()).dict(),
+                                         timestamp=datetime.datetime.now().timestamp()).dict(),
             "details": None
         }
         encrypted = json.dumps(message).encode()
@@ -210,8 +210,7 @@ class ConnectionManager:
         for ws in self.find_all_chat_users(users):
             await self.send_message_to(ws, encrypted)
         for user in self.find_chat_active_users(chat_id):
-            if author_id != user.get("user"):
-                await self.send_message_to(user.get("ws"), encrypted)
+            await self.send_message_to(user.get("ws"), encrypted)
 
     async def send_message_to(self, websocket: WebSocket, message: bytes):
         await websocket.send_bytes(message)
